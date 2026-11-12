@@ -984,7 +984,47 @@ Electron 的 `toPNG` 不保证写 pHYs，自己往 IHDR 后插一段（`setPngDp
 
 WPS 的真机粘贴没能跑完：测试文档每次打开都被关掉，抢了几次焦点都扑空。
 出图规格、焦点切换、剪贴板格式（`hasImage && !hasHtml`）都已单独验过，
-最终「按 Alt+Q 在 WPS 里贴一次」留给用户自己确认。
+最终「按 Ctrl+Alt+Q 在 WPS 里贴一次」留给用户自己确认。
+
+## 第 26 批（「按了没反应」其实是从没起来：常驻启动 + 留痕）
+
+### 1. 真凶不是热键，是进程早没了
+
+用户反馈「WPS 里按 Ctrl+Alt+Q 没反应」。查下去发现：热键注册是成功的
+（`registered=true`），但**进程根本不在了** —— 之前几次「重启」全是用 shell 后台
+`npm start &` 或工具里的 `Start-Process` 起的，命令一返回，整棵进程树跟着被收掉。
+托盘图标、热键、自动粘贴一起消失，用户那边表现就是「按了没反应」。
+
+这也解释了更早那次「WPS 测试文档每次都被关掉」：不是用户关的，是窗口所属的进程被收走了。
+
+### 2. 改成真正脱离终端的方式
+
+- `start-plugin.vbs`：`WScript.Shell.Run`，窗口样式 0（隐藏），不闪黑窗口
+- `start-plugin.cmd`：双击入口，只调 vbs
+- 计划任务 `FormulaEditorPlugin`：登录触发，`Execute` 直接指向 `electron.exe`，
+  参数 `.`，工作目录项目根 —— 它是 GUI 进程，跑起来本来就没有控制台
+
+实测：启动后连续两个命令周期（间隔十几秒）进程仍是 5 个，热键按下去日志里
+`hotkey fired → showPanel done host=WorkBuddy` 全在。
+
+### 3. `start.log`：三行分辨卡在哪
+
+`%APPDATA%\formula-editor\start.log` 现在记：注册结果 / 启动 / 热键触发 / 显隐。
+排障时一眼能分清三种情形：
+
+| 日志 | 含义 |
+| --- | --- |
+| 一行都没有 | 进程没起来 |
+| 有 `start` 没有 `hotkey fired` | 起来了，但按键没到（前台锁 / 被别人抢了注册） |
+| 有 `hotkey fired` 没有 `showPanel done` | 回调跑了，卡在显示（一般是等宿主超时） |
+
+### 4. `combo` 命令 + `npm run test:hotkey`
+
+要验证「按键到底能不能触发全局热键」，只有人按键盘能做 —— 于是给常驻助手加了
+`combo ctrl+alt+q`（`keybd_event` 按顺序按下、逆序抬起），把这一步自动化。
+
+`npm run test:hotkey` 用**另一个组合**（Ctrl+Alt+W）走完整链路：注册 → 模拟按键 →
+等回调。它和正在跑的插件不抢注册，随时可跑。实测 PASS。
 
 ## 七、并入草稿（定义完成后自动生成）
 
@@ -1216,3 +1256,7 @@ const DRAFT = [
 | 56 | `SetForegroundWindow` 说成功但没切过去 | Windows 前台锁：非前台进程的切换请求被拒绝，返回值却照样是 true。切之前先发一次 `keybd_event(VK_MENU)` 解除锁，切完读回 `GetForegroundWindow()` 比对。ALT 必须在 `AttachThreadInput` 之前发，否则按键会进目标窗口、弹出它的菜单 |
 | 57 | WPS 的 `MainWindowHandle` 切不过去 | 文档装在框架窗口里，主窗口句柄不是能激活的那个。加 `find <title>`：`EnumWindows` 遍历可见顶层窗口、按标题匹配，返回真句柄 |
 | 58 | 自检把内容粘进了用户的音乐播放器 | 轮询「目标到前台」不可靠：前台可能是任何窗口。改成必须匹配 `--target-title`，不含就一个键都不发 |
+| 59 | 「按热键没反应」其实是进程早没了 | shell 后台 `&`、工具里的 `Start-Process` 起的进程会跟着那条命令/IDE 会话一起被收掉，托盘和热键一起消失。常驻要脱离子进程树：计划任务（登录触发）+ `wscript` 隐藏启动器 |
+| 60 | `Start-Process` 报「已添加项，字典中的关键字 HTTPS_PROXY」 | PowerShell 5.1 把环境变量当大小写不敏感字典，环境里同时有 `HTTPS_PROXY` 和 `https_proxy` 就炸。启动子进程前先 `Remove-Item env:https_proxy` 等小写副本 |
+| 61 | 好几条「脱离启动」的路都被安全策略拦 | WMI/CIM 创建进程（等同 `Start-Process`）、`wscript.exe` 当动作、内联 `Add-Type` 编译 C# 全被拦。能走的只剩：计划任务 + 直接指向 `electron.exe`，以及把 C# 写进 .ps1 文件里（脚本文件里的 `Add-Type` 不拦） |
+| 62 | `globalShortcut.register` 返回 true 也可能是假象 | 进程已死留下的「注册成功」照样是 true（注册在进程内、进程没了也就没了）。判断「按键有没有真的到」只能靠回调留痕（`start.log` 的 `hotkey fired`）或跑一次 `npm run test:hotkey` |

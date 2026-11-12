@@ -18,6 +18,34 @@ src/index.html
 
 首次启动会弹一次小窗，之后只留托盘图标。热键可在托盘菜单里换，也能一键「暂停热键」。
 
+### 想让它一直待着
+
+`npm start` 起的进程跟着那个终端走 —— 终端一关，托盘就没了（在 IDE 里更明显：
+IDE 结束任务时会把整棵进程树一起收掉）。要常驻，用下面两种方式之一：
+
+```text
+start-plugin.cmd     双击即可，不会闪黑窗口（内部走 start-plugin.vbs，隐藏启动）
+计划任务              注册一次，之后开机自动起来
+```
+
+开机自启用的就是计划任务 `FormulaEditorPlugin`（登录时触发，隐藏运行）。
+不想要了：`schtasks /delete /tn FormulaEditorPlugin /f`。
+
+### 按了没反应，怎么查
+
+先看 `%APPDATA%\formula-editor\start.log`（最近 60 条）。正常的一次唤出长这样：
+
+```text
+hotkey register ok  accel=Control+Alt+Q
+pid=11424  start  hotkey=Control+Alt+Q registered=true  enabled=true
+hotkey fired  visible=false
+showPanel begin
+showPanel done  host=wps visible=true focused=true
+```
+
+- 最后一行是 `start` 却没有 `hotkey fired` → 进程活着，但按键没到（前台锁或别的程序抢了注册）
+- 一行都没有 → 进程根本没起来，用上面两种方式启动
+
 ## 界面一览
 
 ![界面](docs/screenshot.png)
@@ -590,6 +618,7 @@ FormulaEditor/
 ├─ README.md            本文件（符号表由 scripts/gen-readme.js 自动生成）
 ├─ design.md            设计方案
 ├─ package.json
+├─ start-plugin.cmd     双击启动（不闪黑窗口）/ start-plugin.vbs 是它调用的隐藏启动器
 ├─ src/
 │  ├─ main.js           主进程：托盘、全局热键、浮窗、剪贴板
 │  ├─ preload.js        渲染层与主进程之间的桥（copy / png / hide）

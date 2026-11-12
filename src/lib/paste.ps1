@@ -97,6 +97,7 @@ public class FeWin {
     const byte VK_A = 0x41;
     const byte VK_C = 0x43;
     const byte VK_MENU = 0x12;
+    const byte VK_SHIFT = 0x10;
     const uint KEYUP = 0x0002;
 
     static void Tap(byte vk) {
@@ -182,6 +183,32 @@ public class FeWin {
         keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
         Tap(0x5A); /* VK_Z */
         keybd_event(VK_CONTROL, 0, KEYUP, UIntPtr.Zero);
+    }
+
+    // Send an arbitrary key combo, e.g. "ctrl+alt+q". Used to self-test the
+    // global hotkey without someone physically pressing it.
+    public static bool Combo(string spec) {
+        if (spec == null || spec.Length == 0) return false;
+        string[] parts = spec.ToLower().Split('+');
+        byte[] vk = new byte[parts.Length];
+        for (int i = 0; i < parts.Length; i++) {
+            string p = parts[i].Trim();
+            if (p == "ctrl" || p == "control") { vk[i] = VK_CONTROL; }
+            else if (p == "alt") { vk[i] = VK_MENU; }
+            else if (p == "shift") { vk[i] = VK_SHIFT; }
+            else if (p == "win" || p == "meta") { vk[i] = 0x5B; }
+            else if (p.Length == 1) { vk[i] = (byte)char.ToUpper(p[0]); }
+            else if (p.Length >= 2 && p[0] == 'f' && char.IsDigit(p[1])) {
+                int n = int.Parse(p.Substring(1));
+                if (n < 1 || n > 12) return false;
+                vk[i] = (byte)(0x6F + n);
+            }
+            else { return false; }
+        }
+        for (int i = 0; i < vk.Length; i++) keybd_event(vk[i], 0, 0, UIntPtr.Zero);
+        System.Threading.Thread.Sleep(40);
+        for (int i = vk.Length - 1; i >= 0; i--) keybd_event(vk[i], 0, KEYUP, UIntPtr.Zero);
+        return true;
     }
 
     public static void SelectAllCopy() {
@@ -276,6 +303,13 @@ while ($running -and $null -ne ($line = $in.ReadLine())) {
                 [FeWin]::Paste()
                 $out.WriteLine('ok')
             }
+        }
+        catch { $out.WriteLine('err') }
+    }
+    elseif ($cmd -eq 'combo') {
+        try {
+            if ($parts.Count -ge 2 -and [FeWin]::Combo($parts[1])) { $out.WriteLine('ok') }
+            else { $out.WriteLine('err') }
         }
         catch { $out.WriteLine('err') }
     }

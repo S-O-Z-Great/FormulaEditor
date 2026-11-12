@@ -113,6 +113,7 @@ function placeNearCursor() {
 
 async function showPanel() {
   if (!win || win.isDestroyed()) createWindow();
+  logLine('showPanel begin');
   // 必须在窗口抢焦点之前问，否则拿到的是自己
   currentHost = await paster.host();
   lastHwnd = currentHost.hwnd;
@@ -126,14 +127,18 @@ async function showPanel() {
   }
   // 连同宿主一起发过去：面板要显示「这次给什么格式」，并按宿主选配方
   win.webContents.send('focus', currentHost);
+  logLine('showPanel done  host=' + (currentHost.proc || '?') +
+    ' visible=' + win.isVisible() + ' focused=' + win.isFocused());
 }
 
 function hidePanel() {
   if (!win || win.isDestroyed()) return;
   win.hide();
+  logLine('hidePanel');
 }
 
 async function togglePanel() {
+  logLine('hotkey fired  visible=' + (win && !win.isDestroyed() ? win.isVisible() : 'no-window'));
   if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) {
     hidePanel();
     return;
@@ -282,6 +287,7 @@ function applyHotkey() {
   }
 
   if (!got) {
+    logLine('hotkey register FAILED  tried=' + candidates.join(','));
     notify('热键注册失败：所有候选组合都被占用，可在托盘里换一个');
     updateTray();
     return false;
@@ -290,6 +296,7 @@ function applyHotkey() {
     settings.set('hotkey', got);
     notify('热键 ' + prettyAccel(want) + ' 被占用，改用 ' + prettyAccel(got));
   }
+  logLine('hotkey register ok  accel=' + got);
 
   updateTray();
   return true;
@@ -305,6 +312,30 @@ function notify(msg) {
     try { tray.displayBalloon({ title: '公式输入', content: msg }); } catch (e) { /* 某些系统不支持 */ }
   }
   if (win && !win.isDestroyed()) win.webContents.send('notice', msg);
+}
+
+/** 启动/热键留痕：userData/start.log 追加一行，只留最近 60 条。
+ *  排「按了热键没反应」时先看这个文件 —— 进程起没起、热键注册上没有、
+ *  按下去回调到底跑没跑，比盯着托盘猜快得多。 */
+function logLine(text) {
+  try {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const file = path.join(app.getPath('userData'), 'start.log');
+    const line = new Date().toISOString() + '  ' + text + '\n';
+    let old = '';
+    try { old = fs.readFileSync(file, 'utf8'); } catch (e) { old = ''; }
+    const lines = (old + line).split('\n').filter(Boolean).slice(-60);
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+  } catch (e) { /* 留痕失败不能影响功能 */ }
+}
+
+function logStart() {
+  const hk = settings.get('hotkey') || 'Control+Alt+Q';
+  let ok = false;
+  try { ok = globalShortcut.isRegistered(hk); } catch (e) { ok = false; }
+  logLine('pid=' + process.pid + '  start  hotkey=' + hk +
+    ' registered=' + ok + '  enabled=' + !!settings.get('enabled'));
 }
 
 /* ================= 插入：收起 + 粘回原窗口 =================
@@ -383,6 +414,7 @@ if (!gotLock) {
     createWindow();
     buildTray();
     applyHotkey();
+    logStart();
 
     // 空闲时把重的东西先热起来：PowerShell 助手 + 离屏渲染窗口
     paster.warmup().catch(function () {});

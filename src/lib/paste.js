@@ -159,6 +159,11 @@ async function selectAllCopy() {
   return (await send('selall', 2000)) === 'ok';
 }
 
+/** 发一个组合键，例如 'ctrl+alt+q'（自检热键用，正常流程用不到） */
+async function combo(spec) {
+  return (await send('combo ' + spec, 3000)) === 'ok';
+}
+
 function stop() {
   try {
     if (proc) {
@@ -171,4 +176,4 @@ function stop() {
   buf = '';
 }
 
-module.exports = { warmup, grab, host, windowTitle, find, focus, undo, paste, selectAllCopy, stop };
+module.exports = { warmup, grab, host, windowTitle, find, focus, undo, paste, selectAllCopy, combo, stop };
