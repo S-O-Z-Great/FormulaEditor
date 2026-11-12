@@ -9,7 +9,10 @@ const path = require('node:path');
 const { app } = require('electron');
 
 const DEFAULTS = {
-  hotkey: 'Alt+Q',      // 全局热键：唤出/收起输入面板
+  // 全局热键：唤出/收起输入面板。
+  // 不用 Alt+Q —— 那个组合在 WPS / Word 里是「操作说明搜索」，两边一起响应，
+  // 在文档里根本没法用。Ctrl+Alt+Q 保留了手感，Office 系里没人占。
+  hotkey: 'Control+Alt+Q',
   enabled: true,        // 热键总开关（托盘里可暂停）
   autoPaste: true,      // 写完剪贴板自动发 Ctrl+V 回原窗口
   autoLaunch: false,    // 开机自启（仅打包后生效）
@@ -31,6 +34,15 @@ function load() {
   let disk = {};
   try { disk = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch (e) { disk = {}; }
   data = Object.assign({}, DEFAULTS, disk);
+
+  // 老版本默认是 Alt+Q。它在 WPS / Word 里会撞上「操作说明搜索」，
+  // 所以升级时替用户换掉——只换一次，之后用户自己改回 Alt+Q 就尊重他的选择。
+  if (disk.hotkey === 'Alt+Q' && !disk.hotkeyMigrated) {
+    data.hotkey = DEFAULTS.hotkey;
+    data.hotkeyMigrated = true;
+    save();
+  }
+
   return data;
 }
 

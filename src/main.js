@@ -1,7 +1,7 @@
 /**
  * 主进程 —— 常驻托盘的「随时输入公式」工具
  *
- * 形态：不占任务栏、没有主窗口，按 Alt+Q 在鼠标附近弹出一个无边框面板，
+ * 形态：不占任务栏、没有主窗口，按 Ctrl+Alt+Q 在鼠标附近弹出一个无边框面板，
  *       编完按 Enter，窗口收起、焦点还给原应用、自动发 Ctrl+V。
  *
  * 写什么格式由「宿主是谁」决定（见 lib/hosts.js）。早先的做法是一次把
@@ -32,10 +32,11 @@ let trayOn = null;
 let trayOff = null;
 
 const HOTKEYS = [
-  { accel: 'Alt+Q', label: 'Alt+Q（默认）' },
-  { accel: 'Alt+W', label: 'Alt+W' },
+  { accel: 'Control+Alt+Q', label: 'Ctrl+Alt+Q（默认，Office 里不撞）' },
   { accel: 'Control+Alt+M', label: 'Ctrl+Alt+M' },
   { accel: 'Control+Shift+Space', label: 'Ctrl+Shift+空格' },
+  { accel: 'Alt+Q', label: 'Alt+Q（WPS / Word 里会撞）' },
+  { accel: 'Alt+W', label: 'Alt+W' },
   { accel: 'F9', label: 'F9' }
 ];
 
@@ -165,7 +166,8 @@ function buildTray() {
 function updateTray() {
   if (!tray) return;
   const enabled = !!settings.get('enabled');
-  const hk = settings.get('hotkey') || 'Alt+Q';
+  const rawHk = settings.get('hotkey') || 'Control+Alt+Q';
+  const hk = prettyAccel(rawHk);
 
   tray.setImage(trayImage(!enabled));
   tray.setToolTip(enabled ? '公式输入 · 按 ' + hk + ' 唤出' : '公式输入 · 已暂停');
@@ -236,7 +238,7 @@ function updateTray() {
         return {
           label: k.label,
           type: 'radio',
-          checked: hk === k.accel,
+          checked: rawHk === k.accel,
           click: function () { settings.set('hotkey', k.accel); applyHotkey(); }
         };
       })
@@ -266,24 +268,36 @@ function applyHotkey() {
 
   if (!settings.get('enabled')) { updateTray(); return false; }
 
-  const accel = settings.get('hotkey') || 'Alt+Q';
-  let ok = false;
-  try { ok = globalShortcut.register(accel, togglePanel); } catch (e) { ok = false; }
+  const want = settings.get('hotkey') || 'Control+Alt+Q';
+  // 一个被占了就顺着列表往下试，别只退一个固定组合 —— 谁占着哪个组合，
+  // 事先根本不知道（输入法、截图工具、录屏软件都爱抢 Ctrl+Alt+字母）。
+  const candidates = [want].concat(HOTKEYS.map(function (h) { return h.accel; })
+    .filter(function (a) { return a !== want; }));
 
-  if (!ok) {
-    // 被别的软件占了：退回默认组合再试，两个都不行才提示
-    const fallback = 'Control+Alt+M';
-    try { ok = accel === fallback ? false : globalShortcut.register(fallback, togglePanel); } catch (e) { ok = false; }
-    if (ok) {
-      settings.set('hotkey', fallback);
-      notify('热键 ' + accel + ' 已被占用，改用 ' + fallback);
-    } else {
-      notify('热键注册失败：' + accel + ' 可能被其他程序占用，可在托盘里换一个');
-    }
+  let got = '';
+  for (let i = 0; i < candidates.length; i++) {
+    let ok = false;
+    try { ok = globalShortcut.register(candidates[i], togglePanel); } catch (e) { ok = false; }
+    if (ok) { got = candidates[i]; break; }
+  }
+
+  if (!got) {
+    notify('热键注册失败：所有候选组合都被占用，可在托盘里换一个');
+    updateTray();
+    return false;
+  }
+  if (got !== want) {
+    settings.set('hotkey', got);
+    notify('热键 ' + prettyAccel(want) + ' 被占用，改用 ' + prettyAccel(got));
   }
 
   updateTray();
-  return ok;
+  return true;
+}
+
+/** Control+Alt+Q → Ctrl+Alt+Q（托盘和提示里读着顺眼） */
+function prettyAccel(a) {
+  return String(a || '').replace(/Control/g, 'Ctrl').replace(/\+/g, '+');
 }
 
 function notify(msg) {
@@ -537,16 +551,19 @@ if (!gotLock) {
       win.webContents.once('did-finish-load', async function () {
         await delay(700);
         const hk = settings.get('hotkey');
-        let png = '';
-        try { png = await snip.toDataURL('\\frac{1}{2}', { height: 44 }); } catch (e) { png = ''; }
+        let pic = null;
+        try { pic = await snip.render('\\frac{1}{2}', { pt: settings.get('formulaPt') || 10.5, bg: 'white' }); } catch (e) { pic = null; }
         const info = {
           hotkey: hk,
           hotkeyRegistered: globalShortcut.isRegistered(hk),
           enabled: !!settings.get('enabled'),
           autoPaste: !!settings.get('autoPaste'),
+          formulaPt: settings.get('formulaPt'),
           trayCreated: !!tray,
           pasterAlive: (await paster.warmup()) === 'pong',
-          pngOk: png.indexOf('data:image/png') === 0,
+          pngOk: !!(pic && pic.dataURL && pic.dataURL.indexOf('data:image/png') === 0),
+          pngPx: pic ? pic.width + 'x' + pic.height : '',
+          pngDpi: pic ? Math.round(pic.dpi) : 0,
           windowSkippedTaskbar: win.isVisible() ? false : true
         };
         fs.writeFileSync(out, JSON.stringify(info, null, 2));
@@ -592,7 +609,7 @@ if (!gotLock) {
       settings.set('firstRun', false);
       setTimeout(function () {
         showPanel();
-        notify('按 ' + (settings.get('hotkey') || 'Alt+Q') + ' 随时唤出，Enter 插入，Esc 收起');
+        notify('按 ' + prettyAccel(settings.get('hotkey') || 'Control+Alt+Q') + ' 随时唤出，Enter 插入，Esc 收起');
       }, 600);
     }
   });
