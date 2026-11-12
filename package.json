@@ -1,0 +1,26 @@
+{
+  "name": "formula-editor",
+  "version": "0.4.0",
+  "private": true,
+  "description": "键盘驱动的公式编辑器 + 随时唤出的输入插件",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node scripts/start.js",
+    "icons": "node scripts/make-tray-icon.js",
+    "test": "node test/engine.test.js && node test/hosts.test.js && node test/omml.test.js",
+    "test:plugin": "node test/plugin.probe.js",
+    "test:paste": "node test/paste.e2e.js",
+    "docx:test": "node scripts/make-test-docx.js",
+    "test:wps": "node scripts/make-test-docx.js --open && node scripts/start.js --e2e=test/_wps.json --target-title=_wpsprobe",
+    "test:ui": "node test/input.probe.js && node test/inline2.probe.js && node test/slots.probe.js && node test/core.probe.js && node test/sigil.probe.js && node test/unit.probe.js && node test/slotvis.probe.js && node test/slotnav.probe.js && node test/compound.probe.js && node test/edge.probe.js && node test/leftnum.probe.js && node test/gap.probe.js && node test/inside.probe.js && node test/cmdk.probe.js && node test/plugin.probe.js && node test/allcodes.probe.js",
+    "png:check": "node scripts/png-check.js"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "puppeteer-core": "^25.16.0"
+  },
+  "dependencies": {
+    "katex": "^0.19.1",
+    "mathlive": "^0.111.4"
+  }
+}

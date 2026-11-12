@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>离线渲染</title>
+  <link rel="stylesheet" href="vendor/mathlive/mathlive-fonts.css" />
+  <link rel="stylesheet" href="vendor/mathlive/mathlive-static.css" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      /* 离屏窗口只负责算尺寸，不给人看，字体必须和编辑器里一致 */
+      font-family: "Cambria Math", "Latin Modern Math", serif;
+    }
+    #box {
+      display: inline-block;
+      /* 留白只给抗锯齿一点余量：留多了，贴进文档的图会带着一圈白边往下跌，
+         看起来比正文小一号，还得手调。 */
+      padding: 8px;
+      color: #111;
+      font-size: 40px;
+      line-height: 1.2;
+      white-space: nowrap;
+      background: transparent;
+    }
+    #box .ML__mathlive { font-size: inherit; }
+  </style>
+</head>
+<body>
+  <div id="box"></div>
+  <script src="vendor/mathlive/mathlive.min.js"></script>
+  <script>
+    /* 内容换过 / 字体刚落位之后重量一次：宽度算小了右边会被切掉 */
+    window.feMeasure = function () {
+      const box = document.getElementById('box');
+      const inner = box.firstElementChild || box;
+      const r = inner.getBoundingClientRect();
+      const pad = 3;
+      const cw = document.documentElement.clientWidth;
+      const ch = document.documentElement.clientHeight;
+      const x = Math.max(0, Math.floor(r.left) - pad);
+      const y = Math.max(0, Math.floor(r.top) - pad);
+      const right = Math.min(cw, Math.ceil(r.right) + pad);
+      const bottom = Math.min(ch, Math.ceil(r.bottom) + pad);
+      return {
+        x: x, y: y,
+        w: Math.max(1, right - x),
+        h: Math.max(1, bottom - y),
+        contentW: Math.max(1, Math.floor(r.right) - Math.floor(r.left)),
+        contentH: Math.max(1, Math.floor(r.bottom) - Math.floor(r.top))
+      };
+    };
+
+    /* 把 LaTeX 铺成静态 markup，返回截图矩形（CSS px + 设备像素比），
+     * 主进程拿这个矩形去 capturePage 裁剪。
+     *
+     * 外框量的是「公式元素自己」而不是 #box：#box 是 inline-block，它的高度
+     * 被 line-height 撑成 1.2em 左右，拿它算字号会让每张图都大一圈（连一个
+     * 「1」都会被算成 1.24em 高）。内容框才是真的。 */
+    window.feRender = function (latex, size, bg) {
+      const box = document.getElementById('box');
+      box.style.fontSize = (size || 40) + 'px';
+      // 白底是给文档用的：透明底贴进深色界面，黑字会整个糊掉
+      box.style.background = bg === 'white' ? '#ffffff' : 'transparent';
+      box.innerHTML = '';
+
+      let html = '';
+      try {
+        if (window.MathLive && MathLive.convertLatexToMarkup) {
+          html = MathLive.convertLatexToMarkup(latex, { mathstyle: 'displaystyle', defaultMode: 'math' });
+        }
+      } catch (e) { html = ''; }
+
+      if (html) {
+        box.innerHTML = html;
+      } else {
+        // 老版本没有 convertLatexToMarkup，退回只读 math-field
+        const mf = document.createElement('math-field');
+        mf.setAttribute('read-only', '');
+        mf.style.fontSize = 'inherit';
+        mf.value = latex;
+        box.appendChild(mf);
+      }
+
+      const inner = box.firstElementChild || box;
+      const r = inner.getBoundingClientRect();
+      const pad = 3;   // 只留抗锯齿的余量，留多了图会带一圈白边往上顶
+      const cw = document.documentElement.clientWidth;
+      const ch = document.documentElement.clientHeight;
+      const x = Math.max(0, Math.floor(r.left) - pad);
+      const y = Math.max(0, Math.floor(r.top) - pad);
+      const right = Math.min(cw, Math.ceil(r.right) + pad);
+      const bottom = Math.min(ch, Math.ceil(r.bottom) + pad);
+
+      return {
+        x: x,
+        y: y,
+        w: Math.max(1, right - x),
+        h: Math.max(1, bottom - y),
+        contentW: Math.max(1, Math.floor(r.right) - Math.floor(r.left)),
+        contentH: Math.max(1, Math.floor(r.bottom) - Math.floor(r.top)),
+        dpr: window.devicePixelRatio || 1
+      };
+    };
+  </script>
+</body>
+</html>

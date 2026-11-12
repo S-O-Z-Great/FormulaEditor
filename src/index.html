@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>公式编辑器</title>
+  <link rel="stylesheet" href="vendor/mathlive/mathlive-fonts.css" />
+  <link rel="stylesheet" href="vendor/mathlive/mathlive-static.css?v=11" />
+  <link rel="stylesheet" href="style.css?v=30" />
+</head>
+<body>
+  <header class="titlebar">
+    <span class="brand">公式编辑器</span>
+    <!-- 插件模式：这次往哪个软件粘、粘什么格式。认不出宿主时变橙色提示 -->
+    <span class="target" id="target" hidden></span>
+    <div class="formats" id="formats">
+      <button data-fmt="latex" class="on">LaTeX</button>
+      <button data-fmt="mathml">MathML</button>
+      <button data-fmt="word">Word 公式</button>
+      <button data-fmt="png">PNG</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="win-btn" id="btnMin" title="最小化">–</button>
+    <button class="win-btn" id="btnQuit" title="退出">×</button>
+  </header>
+
+  <main id="stage">
+    <!-- 空白处的速查底纹：只做背景，不吃鼠标、不参与排版 -->
+    <div class="bg-hints" id="bgHints" aria-hidden="true"></div>
+    <div class="field-wrap">
+      <math-field id="mf" math-virtual-keyboard-policy="manual"></math-field>
+      <div class="slot-box" id="slotBox" hidden></div>
+      <div class="caret-hint" id="caretHint">点击这里，或用键盘直接打字</div>
+      <div class="cand" id="cand" hidden></div>
+    </div>
+    <div class="banner" id="banner" hidden></div>
+  </main>
+
+  <footer>
+    <div class="status-row">
+      <div class="ctx" id="ctx" hidden></div>
+      <div class="echo" id="echo">按键 0</div>
+      <div class="toast" id="toast"></div>
+    </div>
+    <div class="key-row">
+      <div class="hints" id="hints">
+        <kbd>#</kbd>符号<kbd>@</kbd>变量<kbd>$</kbd>元素<span class="sep">·</span><kbd>Ctrl</kbd><kbd>K</kbd>面板<span class="sep">·</span><kbd>Tab</kbd>换格<kbd>←↑↓→</kbd>换槽<span class="sep">·</span><kbd>[</kbd><kbd>]</kbd>跳块<kbd>Enter</kbd>复制
+      </div>
+      <div class="ime" id="ime" title="输入法状态：用中文输入法打字时会亮起（浏览器读不到系统的中英开关）">
+        <span class="ime-dot"></span><span id="imeText">英文</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- 命令面板：Ctrl/⌘ + K 唤出，搜触发码 / 中文名，回车插入 -->
+  <div class="cmdk" id="cmdk" hidden>
+    <div class="cmdk-panel">
+      <div class="cmdk-head">
+        <span class="cmdk-mark">›</span>
+        <input id="cmdkInput" class="cmdk-input" type="text" spellcheck="false" autocomplete="off"
+               placeholder="搜符号、结构或中文名：al / 根号 / 分数 / 约等于" />
+      </div>
+      <div class="cmdk-list" id="cmdkList"></div>
+      <div class="cmdk-foot">
+        <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+        <span><kbd>Enter</kbd> 插入</span>
+        <span><kbd>Esc</kbd> 关闭</span>
+        <span class="cmdk-tip" id="cmdkTip"></span>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/mathlive/mathlive.min.js"></script>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="symbols.js?v=9"></script>
+  <script src="engine.js?v=9"></script>
+  <!-- 宿主 → 格式规则表（UMD：node 单测和渲染层共用同一份） -->
+  <script src="lib/hosts.js?v=1"></script>
+  <script src="lib/mathml2omml.js?v=1"></script>
+  <script src="renderer.js?v=39"></script>
+</body>
+</html>

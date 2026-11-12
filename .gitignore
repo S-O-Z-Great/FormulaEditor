@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release/
+
+# 自检时生成的临时产物（docx / 截图 / 结果 json），不进版本库
+test/_*
+*.log
+Thumbs.db
+.DS_Store
