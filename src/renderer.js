@@ -2467,6 +2467,10 @@
       }
     }
 
+    // 没有文本就别兜底了：writeText('') 会把刚写好的图连同剪贴板一起清空，
+    // 用户按 Ctrl+V 什么也拿不到，比直接报错更难查。
+    if (!text) return false;
+
     try {
       await navigator.clipboard.writeText(text);
       return true;
@@ -2506,8 +2510,15 @@
         // 依赖主进程的离屏渲染（只有桌面版有），网页版直接说清楚
         if (!fe.png) { toast('PNG 出图需要桌面版'); return; }
         const pic = await fe.png(cleanLatex(raw));
-        if (!pic) { toast('出图失败'); return; }
-        if (!await writeClipboard({ text: cleanLatex(raw), png: pic })) { toast('复制失败'); return; }
+        if (!pic || !pic.url) { toast('出图失败'); return; }
+        // 独立编辑器的图片是用户自己按 Ctrl+V 粘的。这里同样不放纯文本：
+        // Word / WPS 在图和文本都在时会挑文本，用户看到的就是一串字母。
+        const html = pic.w && pic.h
+          ? '<meta charset="utf-8"><img src="' + pic.url + '" width="' + Math.round(pic.w * 96 / 72) +
+            '" height="' + Math.round(pic.h * 96 / 72) + '" style="width:' + pic.w +
+            'pt;height:' + pic.h + 'pt" alt="">'
+          : '';
+        if (!await writeClipboard({ html: html, png: pic.url })) { toast('复制失败'); return; }
       }
       toast('已复制 ' + labelOf(format));
       if (closeAfter) setTimeout(function () { fe.close(); }, 140);
@@ -2602,7 +2613,7 @@
 
     const bare = cleanLatex(raw);
     const p = hostPlan;
-    // 纯文本永远给，它是最后的兜底：图挂了、富文本被忽略，至少还有字
+    // 先只准备文本：它是兜底，也是「文本类宿主」的唯一内容
     const payload = { text: window.FE_HOSTS ? window.FE_HOSTS.delimit(bare, p) : bare };
 
     // 富文本只在宿主真能解析 MathML 时才写。
@@ -2615,15 +2626,44 @@
       } catch (err) { /* 富文本失败不影响纯文本 */ }
     }
 
+    // 出图。返回 { url, w, h }：w/h 是这张图「应该显示成多大」（pt）
+    let shot = null;
     if (p.png && fe.png) {
       try {
         // 不指定像素高：主进程按托盘里的「公式字号」（默认五号 10.5pt）算显示尺寸，
-        // 出图带 288dpi，贴进 Word/WPS 正好和正文一样大，用户不用再拖图片角。
-        const pic = await fe.png(bare, { bg: p.png === 'white' ? 'white' : 'transparent' });
-        if (pic) payload.png = pic;
+        // 出图带 288dpi，写进文件里正好和正文一样大。
+        shot = await fe.png(bare, { bg: p.png === 'white' ? 'white' : 'transparent' });
+        if (shot && shot.url) payload.png = shot.url;
       } catch (err) { /* 出图失败就只给文字和富文本 */ }
-      if (!payload.png && override === 'png') toast('出图失败，已改为复制文字');
+      if (!payload.png && (p.imageOnly || override === 'png')) {
+        toast('出图失败，已改为复制文字');
+      }
     }
+
+    // 出了图而且这个宿主只认图 → 把文本从剪贴板里摘掉。
+    // Word / WPS / 微信在「图 + 文本」同时存在时挑的是文本，用户看到的就是
+    // 「粘进去一串字母」。图已经成了，就不该再留这个诱饵。
+    if (payload.png && p.imageOnly) {
+      delete payload.text;
+      delete payload.html;
+
+      // 尺寸只能靠富文本来定：剪贴板里的位图不带 DPI —— PNG 的 pHYs 在转成 CF_DIB
+      // 时就被丢了，WPS / Word 一律按 96dpi 解释像素，288dpi 的图于是大 3 倍
+      // （实测过：图和文本同时给，粘出来是 3 倍大的图；只给 <img> 才是正文大小）。
+      // 所以文档类宿主把位图整个撤掉，只留一段带尺寸的 <img>，位图仍然高清，
+      // 打印时才不糊。
+      if (shot && shot.w && shot.h) {
+        const pxW = Math.round(shot.w * 96 / 72);
+        const pxH = Math.round(shot.h * 96 / 72);
+        payload.html = '<meta charset="utf-8"><img src="' + shot.url +
+          '" width="' + pxW + '" height="' + pxH +
+          '" style="width:' + shot.w + 'pt;height:' + shot.h + 'pt" alt="">';
+        if (p.imgVia === 'html') delete payload.png;   // 给文档：只要这段 HTML
+      }
+    }
+
+    // 排障用：e2e 会把它读出来，确认到底写了哪几种格式
+    window.__lastPayloadKeys = Object.keys(payload);
 
     const written = await writeClipboard(payload);
     if (!written) { toast('写剪贴板失败'); return; }

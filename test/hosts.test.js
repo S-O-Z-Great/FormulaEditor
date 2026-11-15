@@ -76,9 +76,27 @@ eq('已有 $$ 不套两层', H.delimit('$$x$$', { text: 'dollar' }), '$$x$$');
 eq('空内容', H.delimit('  ', { text: 'dollar' }), '');
 
 console.log('\n[7] 配方说明（界面上那句提示）');
-eq('WPS 的说明', H.plan({ proc: 'wps' }).summary, 'LaTeX + 白底图片');
+eq('WPS 的说明', H.plan({ proc: 'wps' }).summary, '白底图片');
 eq('记事本的说明', H.plan({ proc: 'notepad' }).summary, 'LaTeX');
 eq('浏览器的说明', H.plan({ proc: 'chrome' }).summary, 'LaTeX + $ + MathML');
+
+console.log('\n[8] 只给图的宿主');
+eq('WPS 只给图', H.plan({ proc: 'wps' }).imageOnly, true);
+eq('PPT 只给图', H.plan({ proc: 'wpp' }).imageOnly, true);
+eq('聊天只给图', H.plan({ proc: 'weixin' }).imageOnly, true);
+eq('记事本不是只给图', H.plan({ proc: 'notepad' }).imageOnly, false);
+eq('浏览器不是只给图', H.plan({ proc: 'chrome' }).imageOnly, false);
+eq('手动选图片也是只给图', H.plan({ proc: 'notepad' }, 'png').imageOnly, true);
+eq('手动选纯文本不沾图', H.plan({ proc: 'wps' }, 'text').imageOnly, false);
+eq('WPS 手动纯文本的说明', H.plan({ proc: 'wps' }, 'text').summary, 'LaTeX');
+
+console.log('\n[9] 图怎么送进去');
+eq('WPS 用 HTML 送图', H.plan({ proc: 'wps' }).imgVia, 'html');
+eq('PPT 用 HTML 送图', H.plan({ proc: 'wpp' }).imgVia, 'html');
+eq('微信直接给位图', H.plan({ proc: 'weixin' }).imgVia, 'bitmap');
+eq('记事本没有图', H.plan({ proc: 'notepad' }).imgVia, '');
+eq('手动选图片时两条路都给', H.plan({ proc: 'notepad' }, 'png').imgVia, 'both');
+eq('WPS 手动选图片也只给 HTML', H.plan({ proc: 'wps' }, 'png').imgVia, 'html');
 
 console.log('\n' + (fail === 0 ? '全部通过 ' + pass + ' 项' : fail + ' 项失败'));
 process.exit(fail === 0 ? 0 : 1);

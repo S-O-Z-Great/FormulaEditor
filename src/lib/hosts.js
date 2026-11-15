@@ -39,18 +39,24 @@
   /**
    * 每个宿主的输出配方。
    *
-   *   text : 'bare'  原样 LaTeX        'dollar' 带 $...$（Markdown 直接渲染）
-   *   html : 是否写 MathML 富文本（Word/WPS 不认，写了反而害它挑错）
-   *   png  : null 不出图 / 'white' 白底 / 'transparent' 透明底
+   *   text     : 'bare'  原样 LaTeX        'dollar' 带 $...$（Markdown 直接渲染）
+   *   html     : 是否写 MathML 富文本（Word/WPS 不认，写了反而害它挑错）
+   *   png      : null 不出图 / 'white' 白底 / 'transparent' 透明底
+   *   imageOnly: 出了图就**只给图**，剪贴板里不留纯文本。
+   *              Word / WPS / 微信这类宿主在「图 + 文本」同时存在时会挑文本 ——
+   *              用户看到的就成了「粘进去是一串字母」。要么只有图，要么只有文本。
+   *   imgVia   : 'html'   只写一段 <img style="width:..pt">：文档类宿主按这段的尺寸放图。
+   *                        位图（CF_DIB）不带 DPI，直接给图会被当成 96dpi、大 3 倍。
+   *              'bitmap' 只写位图：聊天窗口吃这个。
    *
    * 白底是给文档用的：透明底贴在深色界面里，黑字会整个糊掉。
    * 透明底只留给「认不出来」的兜底场景。
    */
   var PLANS = {
-    word: { text: 'bare', html: false, png: 'white' },
-    ppt: { text: 'bare', html: false, png: 'white' },
+    word: { text: 'bare', html: false, png: 'white', imageOnly: true, imgVia: 'html' },
+    ppt: { text: 'bare', html: false, png: 'white', imageOnly: true, imgVia: 'html' },
     excel: { text: 'bare', html: false, png: null },
-    chat: { text: 'bare', html: false, png: 'white' },
+    chat: { text: 'bare', html: false, png: 'white', imageOnly: true, imgVia: 'bitmap' },
     browser: { text: 'dollar', html: true, png: null },
     markdown: { text: 'dollar', html: false, png: null },
     notepad: { text: 'bare', html: false, png: null },
@@ -65,8 +71,9 @@
     text: { text: 'bare', html: false, png: null },
     dollar: { text: 'dollar', html: false, png: null },
     mathml: { text: 'dollar', html: true, png: null },
-    png: { text: 'bare', html: false, png: 'white' },
-    pngclear: { text: 'bare', html: false, png: 'transparent' }
+    // 手动选图片时目标宿主已知（wps / ppt）就只给 HTML，未知才两条路都给
+    png: { text: 'bare', html: false, png: 'white', imageOnly: true, imgVia: 'auto' },
+    pngclear: { text: 'bare', html: false, png: 'transparent', imageOnly: true, imgVia: 'auto' }
   };
 
   var OVERRIDE_LABELS = {
@@ -125,12 +132,18 @@
     var k = classify(host);
     var o = override && override !== 'auto' ? OVERRIDES[override] : null;
     var base = o || PLANS[k.id] || PLANS.unknown;
+    // imgVia 'auto' = 按宿主定：文档类只给 HTML（位图会被当成 96dpi，大 3 倍），
+    // 其他宿主两条路都给，谁认识谁拿
+    var via = base.imgVia;
+    if (via === 'auto') via = (k.id === 'word' || k.id === 'ppt') ? 'html' : 'both';
     return {
       host: k,
       override: override || 'auto',
       text: base.text,
       html: base.html,
       png: base.png,
+      imageOnly: !!base.imageOnly,
+      imgVia: base.png ? (via || 'bitmap') : '',
       // 界面上要用一句话说清「这次会给什么」
       summary: describe(base)
     };
@@ -138,6 +151,10 @@
 
   function describe(p) {
     var parts = [];
+    // 只给图的宿主别说「LaTeX + 白底图片」—— 那个文本根本不会进剪贴板
+    if (p.imageOnly && p.png) {
+      return p.png === 'white' ? '白底图片' : '透明图片';
+    }
     parts.push(p.text === 'dollar' ? 'LaTeX + $' : 'LaTeX');
     if (p.html) parts.push('MathML');
     if (p.png === 'white') parts.push('白底图片');

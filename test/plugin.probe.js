@@ -26,7 +26,11 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
       png: async (latex, opts) => {
         window.__calls.png++;
         window.__calls.pngOpts.push(opts || {});
-        return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        return {
+          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+          w: 63.5,
+          h: 25.5
+        };
       },
       hide: () => { window.__calls.hide++; },
       close: () => { window.__calls.close++; },
@@ -160,7 +164,10 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   await page.keyboard.press('Enter');
   await wait(600);
   c = await calls();
-  ok('图片模式带 image/png', c.clip.length === 1 && c.clip[0].types.indexOf('image/png') >= 0,
+  ok('图片模式：HTML + 位图都给、无纯文本', c.clip.length === 1 &&
+    typesOf(c.clip[0]).indexOf('image/png') >= 0 &&
+    typesOf(c.clip[0]).indexOf('text/html') >= 0 &&
+    typesOf(c.clip[0]).indexOf('text/plain') < 0,
     JSON.stringify(c.clip[0] && c.clip[0].types));
 
   /* 5. Esc 收起而不是退出 */
@@ -185,13 +192,19 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
   await wait(700);
   c = await calls();
   let r = c.clip[0] || { types: [] };
-  ok('WPS：给白底图片', typesOf(r).indexOf('image/png') >= 0, JSON.stringify(typesOf(r)));
-  ok('WPS：绝不给 HTML（它只认 OMML，给 MathML 会吐空白）',
-    typesOf(r).indexOf('text/html') < 0, JSON.stringify(typesOf(r)));
+  ok('WPS：给一段 <img> 富文本', typesOf(r).indexOf('text/html') >= 0, JSON.stringify(typesOf(r)));
+  ok('WPS：绝不给 MathML（它只认 OMML，给 MathML 会吐空白）',
+    String(r['text/html'] || '').indexOf('<math') < 0, String(r['text/html'] || '').slice(0, 60));
+  ok('WPS：不给纯文本（有文本它就粘字母）',
+    typesOf(r).indexOf('text/plain') < 0, JSON.stringify(typesOf(r)));
+  ok('WPS：不给位图（CF_DIB 不带 DPI，WPS 按 96dpi 解释 → 大 3 倍）',
+    typesOf(r).indexOf('image/png') < 0, JSON.stringify(typesOf(r)));
+  ok('WPS：<img> 带 pt 尺寸和像素兜底',
+    /<img[^>]+width="\d+"[^>]+height="\d+"[^>]+style="width:[\d.]+pt;height:[\d.]+pt"/.test(String(r['text/html'] || '')),
+    String(r['text/html'] || '').slice(0, 96));
   ok('WPS：出图用白底', (c.pngOpts[0] || {}).bg === 'white', JSON.stringify(c.pngOpts[0]));
-  ok('WPS：纯文本是裸 LaTeX', String(r['text/plain']).charAt(0) !== '$', String(r['text/plain']).slice(0, 24));
   let tg = await targetText();
-  ok('标题栏写着 WPS 和白底图片', /WPS/.test(tg.text) && /白底图片/.test(tg.text), tg.text);
+  ok('标题栏只写白底图片', /WPS/.test(tg.text) && /白底图片/.test(tg.text) && !/LaTeX/.test(tg.text), tg.text);
 
   await setHost('notepad', 'Notepad');
   await reset();

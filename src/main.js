@@ -369,9 +369,19 @@ ipcMain.handle('png', async function (evt, latex, opts) {
     const spec = o.height
       ? { height: o.height, bg: bg }
       : { pt: o.pt || settings.get('formulaPt') || 10.5, bg: bg };
-    return await snip.toDataURL(String(latex || ''), spec);
+    const r = await snip.render(String(latex || ''), spec);
+    if (!r || !r.dataURL) return null;
+    // 一起回传「显示尺寸」（pt）：剪贴板里的位图不带 DPI（PNG 的 pHYs 在转 CF_DIB 时
+    // 就没了），WPS/Word 按 96dpi 解释像素，288dpi 的图会大 3 倍。渲染层拿这两个数
+    // 写进 <img style="width:..pt">，既清晰又和正文齐平。
+    const dpi = r.dpi > 1 ? r.dpi : 288;
+    return {
+      url: r.dataURL,
+      w: Math.round((r.width * 72 / dpi) * 100) / 100,
+      h: Math.round((r.height * 72 / dpi) * 100) / 100
+    };
   } catch (e) {
-    return '';
+    return null;
   }
 });
 
@@ -510,7 +520,9 @@ if (!gotLock) {
           res.steps.push('在面板里放下公式');
           res.debug = await win.webContents.executeJavaScript(
             '({ hasHosts: typeof window.FE_HOSTS, target: (document.getElementById("target")||{}).textContent,' +
-            ' hidden: (document.getElementById("target")||{}).hidden })'
+            ' hidden: (document.getElementById("target")||{}).hidden,' +
+            ' wpsPlan: window.FE_HOSTS ? window.FE_HOSTS.plan({proc:"wps"}) : null,' +
+            ' payloadKeys: window.__lastPayloadKeys })'
           );
 
           win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
@@ -521,11 +533,13 @@ if (!gotLock) {
           // 也没有 readHTML/readImage，格式存在性要问 has()
           const text = await clipboard.readText();
           res.clipboardText = text;
+          res.debug2 = await win.webContents.executeJavaScript('window.__lastPayloadKeys || null');
           res.hasHtml = await clipboard.has('text/html');
           res.hasImage = await clipboard.has('image/png');
+          res.hasText = await clipboard.has('text/plain');
           try { res.formats = await clipboard.availableFormats(); } catch (e) { res.formats = String(e); }
           res.steps.push('剪贴板 text=' + JSON.stringify(String(text).slice(0, 40)) +
-            ' html=' + res.hasHtml + ' image=' + res.hasImage);
+            ' html=' + res.hasHtml + ' image=' + res.hasImage + ' plain=' + res.hasText);
 
           if (focusArg || titleArg) {
             // 富文本靶子（WPS / Word）：文字读不出来（粘进去的是图），改成截图看效果
@@ -548,7 +562,8 @@ if (!gotLock) {
 
             // 只验证用的粘贴，验完撤掉，不给用户留脏文档
             res.undone = await paster.undo();
-            res.pass = res.hasImage && !res.hasHtml && !!shot;
+            // 文档类宿主：只给一段带尺寸的 <img>（位图不带 DPI，给了它反而大 3 倍）
+            res.pass = res.hasHtml && !res.hasText && !res.hasImage && !!shot;
             res.steps.push('截图 ' + (shot ? shot.name : '没截到') + '，已撤销=' + res.undone);
           } else {
             await paster.selectAllCopy();

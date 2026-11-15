@@ -1026,6 +1026,58 @@ WPS 的真机粘贴没能跑完：测试文档每次打开都被关掉，抢了�
 `npm run test:hotkey` 用**另一个组合**（Ctrl+Alt+W）走完整链路：注册 → 模拟按键 →
 等回调。它和正在跑的插件不抢注册，随时可跑。实测 PASS。
 
+## 第 27 批（在 WPS 里粘出公式：图 + 文本之争，位图没有 DPI）
+
+### 1. 症状：无论文本还是图片，粘进去都是字母
+
+WPS 里按 Ctrl+Alt+Q、敲完回车，得到的是一串字母。手动切成「图片」也一样。
+查剪贴板：`image/png` 和 `text/plain` **同时**在。WPS 在这两者之间挑的是**文本**——
+所以图白出了。
+
+对策：文档类宿主出了图就把纯文本从剪贴板里摘掉（`imageOnly`），
+只留图这一条路。
+
+### 2. 第二个症状：图进去了，但大 3 倍
+
+只给图之后确实粘成图了，可尺寸是正文的 3 倍。3 倍不是巧合：
+出图是 **288 dpi**，而剪贴板里的位图**不带 DPI** —— PNG 的 pHYs 在转成 CF_DIB
+那一刻就丢了，WPS / Word 一律按 96 dpi 解释像素。288/96 = 3。
+
+`snip.js` 里那些「按字号算像素、写 pHYs」的工作，只在**从文件插图**时有用，
+剪贴板这条路根本看不到它。
+
+### 3. 解法：尺寸交给富文本，像素留给打印
+
+文档类宿主（WPS / Word / PPT）现在只写一段 HTML：
+
+```html
+<img src="data:image/png;base64,..." width="27" height="21"
+     style="width:19.5pt;height:15.75pt">
+```
+
+- 位图仍是 288 dpi（打印清楚）
+- `width/height` 属性和 `pt` 样式负责「显示多大」
+
+实测：WPS 把这张图按 **正文大小、嵌入型**放了进去（`test/_wps.png`）。
+注意属性写 px、style 写 pt 两份都给 —— 只给 style 时 WPS 不认。
+
+聊天窗口（微信 / QQ）反过来：它只吃位图，就只给位图（`imgVia: 'bitmap'`）。
+
+### 4. 为什么「手动选图片」也会翻车
+
+`settings.json` 里记着 `hostFormats: { "wps": "png" }`（用户点过一次「图片」）。
+手动配方原来写死 `imgVia: 'both'`（HTML + 位图都给），于是又回到「WPS 挑位图 → 大 3 倍」。
+改成 `imgVia: 'auto'`：**按宿主决定**送法 —— 认出是文档就给 HTML，认不出才两条路都给。
+
+### 5. 顺手修的
+
+- `start.log` 之外又加了个剪贴板检查：`paste.ps1` 的 `clip` 命令（Win32 `EnumClipboardFormats`）。
+  Electron 的 `clipboard.has()` 会说「有图」，但**Windows 剪贴板里到底有哪几种格式**只有它能答。
+  没有它，上面那两个坑只能靠猜。
+- 主进程 `clipboard.write({ html })` 这个版本压根写不进 HTML（剪贴板里只剩 text/fmt7），
+  所以富文本必须由渲染进程的 `navigator.clipboard.write` 写，别图省事挪回主进程。
+- 独立编辑器的「图片」按钮原来带纯文本，改成 HTML + 位图、不带文本。
+
 ## 七、并入草稿（定义完成后自动生成）
 
 > 你给出触发码后，我会在这里生成可直接粘贴进 `src/symbols.js` 的条目，
@@ -1260,3 +1312,7 @@ const DRAFT = [
 | 60 | `Start-Process` 报「已添加项，字典中的关键字 HTTPS_PROXY」 | PowerShell 5.1 把环境变量当大小写不敏感字典，环境里同时有 `HTTPS_PROXY` 和 `https_proxy` 就炸。启动子进程前先 `Remove-Item env:https_proxy` 等小写副本 |
 | 61 | 好几条「脱离启动」的路都被安全策略拦 | WMI/CIM 创建进程（等同 `Start-Process`）、`wscript.exe` 当动作、内联 `Add-Type` 编译 C# 全被拦。能走的只剩：计划任务 + 直接指向 `electron.exe`，以及把 C# 写进 .ps1 文件里（脚本文件里的 `Add-Type` 不拦） |
 | 62 | `globalShortcut.register` 返回 true 也可能是假象 | 进程已死留下的「注册成功」照样是 true（注册在进程内、进程没了也就没了）。判断「按键有没有真的到」只能靠回调留痕（`start.log` 的 `hotkey fired`）或跑一次 `npm run test:hotkey` |
+| 63 | WPS 里怎么粘都是字母，图片模式也一样 | 剪贴板里 `image/png` 和 `text/plain` 同时存在时，**WPS 挑的是文本**。文档类宿主出图成功就把纯文本摘掉，剪贴板里只留一条路 |
+| 64 | 图粘进去了，却大了 3 倍 | 位图不带 DPI：PNG 的 pHYs 在转 CF_DIB 时丢掉，WPS/Word 按 96dpi 解释像素，288/96 = 3。尺寸只能靠 HTML 的 `<img width height style="..pt">` 写死 |
+| 65 | 手动选过「图片」之后，自动模式也翻车 | 那条偏好被记成 `hostFormats.wps = 'png'`，而手动配方原来写死「HTML + 位图都给」→ 又回到挑位图。`imgVia` 改成按宿主解析（文档给 HTML，认不出才两条都给） |
+| 66 | 换了 `hosts.js` 却像没生效 | 页面用 `lib/hosts.js?v=N` 引脚本，Chromium 按 URL 缓存，改完必须把 `?v=` 往上推一格，否则跑的还是旧逻辑（这次就被它骗了一轮） |

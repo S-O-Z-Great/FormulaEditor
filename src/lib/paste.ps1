@@ -92,6 +92,16 @@ public class FeWin {
     [DllImport("user32.dll")]
     public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
+    // Clipboard inspection (see Clip()).
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool OpenClipboard(IntPtr hWndNewOwner);
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool CloseClipboard();
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern uint EnumClipboardFormats(uint format);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern int GetClipboardFormatName(uint format, StringBuilder lpszFormatName, int cchMaxCount);
+
     const byte VK_CONTROL = 0x11;
     const byte VK_V = 0x56;
     const byte VK_A = 0x41;
@@ -125,6 +135,41 @@ public class FeWin {
         StringBuilder sb = new StringBuilder(512);
         GetWindowText(h, sb, 512);
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(sb.ToString()));
+    }
+
+    // List the clipboard formats currently on the clipboard, e.g. "HTML Format,PNG,text/plain".
+    // "Does WPS see an image or text?" cannot be answered by the Electron clipboard API
+    // (its has() can be optimistic); this asks Windows directly.
+    public static string Clip() {
+        if (!OpenClipboard(IntPtr.Zero)) return "err";
+        StringBuilder sb = new StringBuilder();
+        try {
+            uint f = 0;
+            while ((f = EnumClipboardFormats(f)) != 0) {
+                string name = "";
+                if (f >= 0xC000) {
+                    StringBuilder n = new StringBuilder(256);
+                    if (GetClipboardFormatName(f, n, 256) > 0) name = n.ToString();
+                } else {
+                    name = StandardFormat(f);
+                }
+                if (name.Length == 0) name = "fmt" + f;
+                if (sb.Length > 0) sb.Append(",");
+                sb.Append(name);
+            }
+        } finally { CloseClipboard(); }
+        return sb.ToString();
+    }
+
+    static string StandardFormat(uint f) {
+        if (f == 1) return "text";
+        if (f == 2) return "bitmap";
+        if (f == 3) return "metafile";
+        if (f == 8) return "dib";
+        if (f == 13) return "unicode-text";
+        if (f == 16) return "locale";
+        if (f == 17) return "dibv5";
+        return "";
     }
 
     // Bring a window to the front and verify it actually got there.
@@ -303,6 +348,12 @@ while ($running -and $null -ne ($line = $in.ReadLine())) {
                 [FeWin]::Paste()
                 $out.WriteLine('ok')
             }
+        }
+        catch { $out.WriteLine('err') }
+    }
+    elseif ($cmd -eq 'clip') {
+        try {
+            $out.WriteLine([FeWin]::Clip())
         }
         catch { $out.WriteLine('err') }
     }

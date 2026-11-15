@@ -164,6 +164,12 @@ async function combo(spec) {
   return (await send('combo ' + spec, 3000)) === 'ok';
 }
 
+/** 剪贴板里现在有哪些格式（Win32 枚举，比 Electron 的 has() 可信） */
+async function clip() {
+  const r = await send('clip', 2000);
+  return r === 'err' ? [] : String(r || '').split(',').filter(Boolean);
+}
+
 function stop() {
   try {
     if (proc) {
@@ -176,4 +182,4 @@ function stop() {
   buf = '';
 }
 
-module.exports = { warmup, grab, host, windowTitle, find, focus, undo, paste, selectAllCopy, combo, stop };
+module.exports = { warmup, grab, host, windowTitle, find, focus, undo, paste, selectAllCopy, combo, clip, stop };
