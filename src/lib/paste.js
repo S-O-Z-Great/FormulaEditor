@@ -170,6 +170,17 @@ async function clip() {
   return r === 'err' ? [] : String(r || '').split(',').filter(Boolean);
 }
 
+/**
+ * 把文件里的文本按指定格式放进剪贴板。
+ * format 可以写 'rtf' / 'html'，也可以写任意注册格式名（如 'MathML'）。
+ *
+ * 为什么要绕到助手来写：Electron 的 clipboard 只能写 text/html/image，而 Office
+ * 恰恰只在自己认识的格式里认公式 —— HTML 那条路已经被实测证明走不通。
+ */
+async function setClip(format, file) {
+  return (await send('setclip ' + format + ' ' + file, 4000)) === 'ok';
+}
+
 function stop() {
   try {
     if (proc) {
@@ -182,4 +193,4 @@ function stop() {
   buf = '';
 }
 
-module.exports = { warmup, grab, host, windowTitle, find, focus, undo, paste, selectAllCopy, combo, clip, stop };
+module.exports = { warmup, grab, host, windowTitle, find, focus, undo, paste, selectAllCopy, combo, clip, setClip, stop };

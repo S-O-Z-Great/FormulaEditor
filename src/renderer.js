@@ -2567,6 +2567,17 @@
   function syncFmtButtons() {
     const box = document.getElementById('formats');
     if (!box) return;
+    // 文档宿主里「纯文本」给的不是 LaTeX 源码，而是 Word/WPS 自己的公式
+    //（EQ 域，能编辑、字号跟正文），所以按钮直接叫「公式」。
+    const h = (hostPlan && hostPlan.host) || {};
+    const office = h.id === 'word' || h.id === 'ppt';
+    const textBtn = box.querySelector('[data-fmt="text"]');
+    if (textBtn) {
+      textBtn.textContent = office ? '公式' : '纯文本';
+      textBtn.title = office
+        ? '插入可编辑公式（WPS / Word 原生公式域）'
+        : '插入 LaTeX 源码';
+    }
     Array.prototype.forEach.call(box.children, function (b) {
       b.classList.toggle('on', b.dataset.fmt === override);
     });
@@ -2613,6 +2624,27 @@
 
     const bare = cleanLatex(raw);
     const p = hostPlan;
+
+    // 文档宿主 + 用户要「公式」→ 给 EQ 域，粘进去是 WPS/Word 自己的公式：
+    // 能点进去改（Alt+F9 看代码）、字号跟正文走，既不是图片也不是 LaTeX 源码。
+    // 剪贴板这段只能由助手写（Electron 写不了 RTF），所以走主进程。
+    if (p.eq && fe.eqClip) {
+      let ok = false;
+      try { ok = await fe.eqClip(bare); } catch (err) { ok = false; }
+      if (ok) {
+        window.__lastPayloadKeys = ['eq'];
+        if (!window.fe || !window.fe.insert) return;
+        try {
+          const r = await window.fe.insert();
+          toast(r && r.pasted ? '已插入公式' : '公式已在剪贴板，按 Ctrl+V');
+        } catch (err) {
+          toast('公式已在剪贴板，按 Ctrl+V');
+        }
+        return;
+      }
+      toast('公式生成失败，改为文字');
+    }
+
     // 先只准备文本：它是兜底，也是「文本类宿主」的唯一内容
     const payload = { text: window.FE_HOSTS ? window.FE_HOSTS.delimit(bare, p) : bare };
 

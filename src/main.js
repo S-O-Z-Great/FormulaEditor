@@ -22,6 +22,7 @@ const settings = require('./lib/settings');
 const paster = require('./lib/paste');
 const snip = require('./lib/snip');
 const hosts = require('./lib/hosts');
+const latex2eq = require('./lib/latex2eq');
 
 let win = null;
 let tray = null;
@@ -360,6 +361,25 @@ ipcMain.handle('insert', async function () {
   return { ok: true, pasted: ok };
 });
 
+/**
+ * 可编辑公式：LaTeX → EQ 域 → RTF → 剪贴板。
+ *
+ * 为什么不用 Electron 的剪贴板：它只能写 text / html，而 Office 的 HTML 导入器
+ * 不做数学转换（OMML、MathML 都会被剥成纯文字，实测）。RTF 里的 EQ 域是唯一
+ * 被 WPS 认下来并且变成排版公式的通道，而它只能由助手用 Win32 写进去。
+ */
+ipcMain.handle('eqclip', async function (evt, latex) {
+  try {
+    const rtf = latex2eq.toRtf(String(latex || ''));
+    if (!rtf) return false;
+    const file = path.join(app.getPath('temp'), 'formula-editor-eq.rtf');
+    fs.writeFileSync(file, rtf, 'utf8');
+    return await paster.setClip('rtf', file);
+  } catch (e) {
+    return false;
+  }
+});
+
 ipcMain.handle('png', async function (evt, latex, opts) {
   try {
     const o = opts || {};
@@ -518,6 +538,18 @@ if (!gotLock) {
           );
           await delay(400);
           res.steps.push('在面板里放下公式');
+
+          // --fmt=<auto|text|png>：按指定格式出（测「公式」这条新路时用）
+          const fmtArg = process.argv.find(function (a) { return a.indexOf('--fmt=') === 0; });
+          if (fmtArg) {
+            const want = fmtArg.slice(6);
+            await win.webContents.executeJavaScript(
+              'var b=document.querySelector(\'button[data-fmt="' + want + '"]\');if(b)b.click();' +
+              '(document.querySelector("button.on[data-fmt]")||{}).textContent || ""'
+            ).then(function (onText) { res.steps.push('选格式 ' + want + ' → 按钮=' + onText); });
+            await delay(300);
+          }
+
           res.debug = await win.webContents.executeJavaScript(
             '({ hasHosts: typeof window.FE_HOSTS, target: (document.getElementById("target")||{}).textContent,' +
             ' hidden: (document.getElementById("target")||{}).hidden,' +
@@ -562,8 +594,15 @@ if (!gotLock) {
 
             // 只验证用的粘贴，验完撤掉，不给用户留脏文档
             res.undone = await paster.undo();
-            // 文档类宿主：只给一段带尺寸的 <img>（位图不带 DPI，给了它反而大 3 倍）
-            res.pass = res.hasHtml && !res.hasText && !res.hasImage && !!shot;
+            // --fmt=text 是「可编辑公式」这条路：剪贴板里应当只有 RTF（EQ 域）
+            const eqMode = fmtArg && fmtArg.slice(6) === 'text';
+            res.clipFormats = await paster.clip();
+            if (eqMode) {
+              res.pass = res.clipFormats.indexOf('Rich Text Format') >= 0 && !!shot;
+            } else {
+              // 文档类宿主：只给一段带尺寸的 <img>（位图不带 DPI，给了它反而大 3 倍）
+              res.pass = res.hasHtml && !res.hasText && !res.hasImage && !!shot;
+            }
             res.steps.push('截图 ' + (shot ? shot.name : '没截到') + '，已撤销=' + res.undone);
           } else {
             await paster.selectAllCopy();

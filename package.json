@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node scripts/start.js",
     "icons": "node scripts/make-tray-icon.js",
-    "test": "node test/engine.test.js && node test/hosts.test.js && node test/omml.test.js",
+    "test": "node test/engine.test.js && node test/hosts.test.js && node test/omml.test.js && node test/eq.test.js",
     "test:plugin": "node test/plugin.probe.js",
     "test:paste": "node test/paste.e2e.js",
     "docx:test": "node scripts/make-test-docx.js",

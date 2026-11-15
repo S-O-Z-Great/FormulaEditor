@@ -88,7 +88,7 @@ eq('记事本不是只给图', H.plan({ proc: 'notepad' }).imageOnly, false);
 eq('浏览器不是只给图', H.plan({ proc: 'chrome' }).imageOnly, false);
 eq('手动选图片也是只给图', H.plan({ proc: 'notepad' }, 'png').imageOnly, true);
 eq('手动选纯文本不沾图', H.plan({ proc: 'wps' }, 'text').imageOnly, false);
-eq('WPS 手动纯文本的说明', H.plan({ proc: 'wps' }, 'text').summary, 'LaTeX');
+eq('WPS 手动纯文本的说明', H.plan({ proc: 'wps' }, 'text').summary, '可编辑公式（EQ 域）');
 
 console.log('\n[9] 图怎么送进去');
 eq('WPS 用 HTML 送图', H.plan({ proc: 'wps' }).imgVia, 'html');
@@ -97,6 +97,16 @@ eq('微信直接给位图', H.plan({ proc: 'weixin' }).imgVia, 'bitmap');
 eq('记事本没有图', H.plan({ proc: 'notepad' }).imgVia, '');
 eq('手动选图片时两条路都给', H.plan({ proc: 'notepad' }, 'png').imgVia, 'both');
 eq('WPS 手动选图片也只给 HTML', H.plan({ proc: 'wps' }, 'png').imgVia, 'html');
+
+console.log('\n[10] 纯文本在文档里 = 可编辑公式（EQ 域）');
+eq('WPS 选纯文本给公式', H.plan({ proc: 'wps' }, 'text').eq, true);
+eq('Word 选纯文本给公式', H.plan({ proc: 'winword' }, 'text').eq, true);
+eq('PPT 选纯文本给公式', H.plan({ proc: 'powerpnt' }, 'text').eq, true);
+eq('记事本选纯文本还是 LaTeX', H.plan({ proc: 'notepad' }, 'text').eq, false);
+eq('浏览器选纯文本还是 LaTeX', H.plan({ proc: 'chrome' }, 'text').eq, false);
+eq('自动模式仍然出图（公式要手动选）', H.plan({ proc: 'wps' }, 'auto').eq, false);
+eq('自动模式仍给白底图片', H.plan({ proc: 'wps' }, 'auto').png, 'white');
+eq('公式模式不出图', H.plan({ proc: 'wps' }, 'text').png, null);
 
 console.log('\n' + (fail === 0 ? '全部通过 ' + pass + ' 项' : fail + ' 项失败'));
 process.exit(fail === 0 ? 0 : 1);

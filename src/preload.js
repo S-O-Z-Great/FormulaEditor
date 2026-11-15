@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('fe', {
   // 主进程只管后半段：收起窗口 + 把焦点还给原应用 + 发 Ctrl+V
   insert: () => ipcRenderer.invoke('insert'),
   png: (latex, opts) => ipcRenderer.invoke('png', latex, opts),
+  // 可编辑公式：文档宿主（WPS / Word / PPT）要「公式」时走这条，
+  // 由主进程生成 EQ 域的 RTF 并交给助手写剪贴板
+  eqClip: (latex) => ipcRenderer.invoke('eqclip', latex),
   settings: () => ipcRenderer.invoke('settings'),
 
   // 宿主：面板弹出那一刻前台是谁。"往哪个软件粘"决定"粘什么格式"

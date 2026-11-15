@@ -136,6 +136,12 @@
     // 其他宿主两条路都给，谁认识谁拿
     var via = base.imgVia;
     if (via === 'auto') via = (k.id === 'word' || k.id === 'ppt') ? 'html' : 'both';
+
+    // 文档宿主里的「纯文本」不是「给 LaTeX 源码」——用户要的是 Word/WPS 自己的
+    // 公式，能点进去改的那种。EQ 域就是这条路（实测：RTF 里的 EQ 域粘进 WPS
+    // 是排版好的公式；MathML / OMML 走 HTML 全被剥成文字）。
+    var eq = override === 'text' && (k.id === 'word' || k.id === 'ppt');
+
     return {
       host: k,
       override: override || 'auto',
@@ -143,9 +149,10 @@
       html: base.html,
       png: base.png,
       imageOnly: !!base.imageOnly,
+      eq: eq,
       imgVia: base.png ? (via || 'bitmap') : '',
       // 界面上要用一句话说清「这次会给什么」
-      summary: describe(base)
+      summary: eq ? '可编辑公式（EQ 域）' : describe(base)
     };
   }
 

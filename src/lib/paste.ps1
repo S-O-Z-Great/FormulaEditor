@@ -102,6 +102,24 @@ public class FeWin {
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern int GetClipboardFormatName(uint format, StringBuilder lpszFormatName, int cchMaxCount);
 
+    // Clipboard writing (see ClipSet()).
+    // Electron's clipboard can only write text/html/image, and Office needs a real
+    // RTF (or a named blob) to accept a formula, so we write the raw formats here.
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool EmptyClipboard();
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+    [DllImport("user32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+    static extern uint RegisterClipboardFormat(string lpszFormat);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr GlobalLock(IntPtr hMem);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GlobalUnlock(IntPtr hMem);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr GlobalFree(IntPtr hMem);
+
     const byte VK_CONTROL = 0x11;
     const byte VK_V = 0x56;
     const byte VK_A = 0x41;
@@ -170,6 +188,52 @@ public class FeWin {
         if (f == 16) return "locale";
         if (f == 17) return "dibv5";
         return "";
+    }
+
+    // Put a file's text on the clipboard under an arbitrary format name.
+    // "rtf" and "html" are shorthand for the two names Office looks for; anything
+    // else is registered verbatim ("MathML", "Word 2003 XML", ...).
+    //
+    // Why not use Electron's clipboard: it can only write text, html and image, and
+    // that html route is exactly what Office refuses to turn into a formula.
+    public static bool ClipSet(string format, string file) {
+        string text;
+        try { text = System.IO.File.ReadAllText(file, Encoding.UTF8); }
+        catch (Exception) { return false; }
+
+        string name = format == "rtf" ? "Rich Text Format"
+                    : format == "html" ? "HTML Format"
+                    : format;
+        uint fmt = RegisterClipboardFormat(name);
+        if (fmt == 0) return false;
+        // RTF and the HTML clipboard are both byte strings; ANSI is what Office emits.
+        byte[] bytes = Encoding.Default.GetBytes(text);
+
+        bool opened = false;
+        for (int i = 0; i < 12 && !opened; i++) {
+            opened = OpenClipboard(IntPtr.Zero);
+            if (!opened) System.Threading.Thread.Sleep(40);
+        }
+        if (!opened) return false;
+
+        bool ok = false;
+        IntPtr h = IntPtr.Zero;
+        try {
+            // GMEM_MOVEABLE | GMEM_ZEROINIT: the clipboard takes ownership of the block
+            h = GlobalAlloc(0x0042, (UIntPtr)(bytes.Length + 1));
+            if (h == IntPtr.Zero) return false;
+            IntPtr p = GlobalLock(h);
+            if (p == IntPtr.Zero) return false;
+            Marshal.Copy(bytes, 0, p, bytes.Length);
+            Marshal.WriteByte(p, bytes.Length, 0);
+            GlobalUnlock(h);
+            EmptyClipboard();
+            ok = SetClipboardData(fmt, h) != IntPtr.Zero;
+        } finally {
+            CloseClipboard();
+            if (!ok && h != IntPtr.Zero) GlobalFree(h);
+        }
+        return ok;
     }
 
     // Bring a window to the front and verify it actually got there.
@@ -354,6 +418,18 @@ while ($running -and $null -ne ($line = $in.ReadLine())) {
     elseif ($cmd -eq 'clip') {
         try {
             $out.WriteLine([FeWin]::Clip())
+        }
+        catch { $out.WriteLine('err') }
+    }
+    elseif ($cmd -eq 'setclip') {
+        try {
+            # setclip <rtf|html|name> <file>  -- put a file's text on the clipboard
+            if ($parts.Count -ge 3) {
+                $rest = ($line -replace '^\S+\s+\S+\s+', '')
+                if ([FeWin]::ClipSet($parts[1], $rest)) { $out.WriteLine('ok') }
+                else { $out.WriteLine('err') }
+            }
+            else { $out.WriteLine('err') }
         }
         catch { $out.WriteLine('err') }
     }
