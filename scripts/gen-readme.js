@@ -54,6 +54,10 @@ showPanel done  host=wps visible=true focused=true
 
 - 最后一行是 \`start\` 却没有 \`hotkey fired\` → 进程活着，但按键没到（前台锁或别的程序抢了注册）
 - 一行都没有 → 进程根本没起来，用上面两种方式启动
+- 有 \`showPanel done  visible=true focused=true\` 但屏幕上就是没有 → Windows 把窗口「藏」在合成层外面了
+  （DWM cloak：\`isVisible()\` 查的是样式位，会撒谎）。插件显示后会在 1.9 秒内自己查一次，
+  真被藏住就写 \`panel cloaked ... -> rebuild window\` 并重建窗口换取新句柄；
+  这条路径只在真卡住时才走，正常唤出不会触发
 
 ## 界面一览
 

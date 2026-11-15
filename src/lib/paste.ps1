@@ -11,6 +11,7 @@
 #   grab          remember the current foreground window handle (call before panel shows)
 #   paste [hwnd]  give focus back to that window, then send Ctrl+V
 #   selall        select all + copy in the foreground window (self-test only)
+#   cloaked <hwnd> DWM cloak state of a window (0 visible, >0 hidden by the shell)
 #   ping          liveness probe
 #   quit          exit
 #
@@ -330,6 +331,23 @@ public class FeWin {
         keybd_event(VK_CONTROL, 0, KEYUP, UIntPtr.Zero);
         System.Threading.Thread.Sleep(70);
     }
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmGetWindowAttribute(IntPtr hWnd, int dwAttribute, out int pvAttribute, int cbAttribute);
+
+    // Is DWM keeping this window hidden?
+    // A cloaked window answers IsWindowVisible()=true and Electron's isVisible()=true,
+    // yet nothing is drawn: the shell cloaks windows on its own (virtual desktops,
+    // show-desktop) and never uncloaks them. There is no way to clear it from outside
+    // the process, so the owner has to replace the HWND. Returns 0/1/2/4, -1 if unknown.
+    public const int DWMWA_CLOAKED = 14;
+
+    public static int Cloaked(IntPtr h) {
+        if (h == IntPtr.Zero || !IsWindow(h)) return -1;
+        int v = 0;
+        int hr = DwmGetWindowAttribute(h, DWMWA_CLOAKED, out v, 4);
+        return hr == 0 ? v : -1;
+    }
 }
 '@
     $compiled = $true
@@ -444,6 +462,16 @@ while ($running -and $null -ne ($line = $in.ReadLine())) {
         try {
             [FeWin]::SelectAllCopy()
             $out.WriteLine('ok')
+        }
+        catch { $out.WriteLine('err') }
+    }
+    elseif ($cmd -eq 'cloaked') {
+        # cloaked <hwnd>  -- DWM cloak state: 0 visible, >0 cloaked, -1 unknown
+        try {
+            if ($parts.Count -ge 2) {
+                $out.WriteLine([string][FeWin]::Cloaked([IntPtr][long]$parts[1]))
+            }
+            else { $out.WriteLine('err') }
         }
         catch { $out.WriteLine('err') }
     }

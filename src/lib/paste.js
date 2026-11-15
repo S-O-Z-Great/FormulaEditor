@@ -181,6 +181,18 @@ async function setClip(format, file) {
   return (await send('setclip ' + format + ' ' + file, 4000)) === 'ok';
 }
 
+/**
+ * 这个窗口是不是被 DWM 遮住了（cloaked）。
+ * 被遮住时 isVisible() 照样回 true、窗口也拿得到焦点，屏幕上一个像素都没有 ——
+ * 只有换掉 HWND 才能恢复，所以面板显示后要查这一次。
+ * 返回 0 = 正常，>0 = 被遮，-1 = 查不到（助手没起来 / 系统不给问）。
+ */
+async function cloaked(hwnd) {
+  if (!hwnd) return -1;
+  const r = await send('cloaked ' + hwnd, 1200);
+  return /^-?\d+$/.test(String(r || '').trim()) ? parseInt(r, 10) : -1;
+}
+
 function stop() {
   try {
     if (proc) {
@@ -193,4 +205,4 @@ function stop() {
   buf = '';
 }
 
-module.exports = { warmup, grab, host, windowTitle, find, focus, undo, paste, selectAllCopy, combo, clip, setClip, stop };
+module.exports = { warmup, grab, host, windowTitle, find, focus, undo, paste, selectAllCopy, combo, clip, setClip, cloaked, stop };

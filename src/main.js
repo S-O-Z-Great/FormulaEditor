@@ -29,6 +29,7 @@ let tray = null;
 let lastHwnd = '';        // 面板弹出前的前台窗口，粘贴时把焦点还给它
 let currentHost = { hwnd: '', proc: '', cls: '' };  // 同时也是「这次往什么软件里粘」
 let quitting = false;
+let rebuilding = false;    // 正在换 HWND（防连按热键时造出两个窗口）
 let trayOn = null;
 let trayOff = null;
 
@@ -113,6 +114,7 @@ function placeNearCursor() {
 }
 
 async function showPanel() {
+  if (rebuilding) { logLine('showPanel skipped (rebuilding)'); return; }
   if (!win || win.isDestroyed()) createWindow();
   logLine('showPanel begin');
   // 必须在窗口抢焦点之前问，否则拿到的是自己
@@ -130,6 +132,92 @@ async function showPanel() {
   win.webContents.send('focus', currentHost);
   logLine('showPanel done  host=' + (currentHost.proc || '?') +
     ' visible=' + win.isVisible() + ' focused=' + win.isFocused());
+  healIfCloaked(currentHost).catch(function () { /* 自愈失败也不该影响这次输入 */ });
+}
+
+/** Electron 的 HWND（getNativeWindowHandle 给的是小端 buffer） */
+function panelHwnd() {
+  const b = panelHwndRaw();
+  if (!b) return '';
+  return b.length >= 8 ? b.readBigUInt64LE(0).toString() : String(b.readUInt32LE(0));
+}
+
+function panelHwndRaw() {
+  try {
+    if (!win || win.isDestroyed()) return null;
+    const b = win.getNativeWindowHandle();
+    return b && b.length >= 4 ? b : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 「按了热键、日志说 visible=true focused=true，屏幕上却什么都没有」。
+ *
+ * 查下来是 DWM 把窗口 cloak 住了：isVisible() 撒谎，窗口从进程外部解除不了
+ * （DwmSetWindowAttribute 返回 E_ACCESSDENIED），不换 HWND 就一直隐身。
+ *
+ * 坑：窗口刚 show 的头几百毫秒本来就是 cloak=2，DWM 合成完才变 0（实测 500ms 内）。
+ * 所以不能一见 2 就动手 —— 隔 650/450/800ms 连问三次，三次都遮着才算真卡住。
+ * 判据放宽到 1.9 秒是有意的：真卡住时用户本来就什么都看不见，多等一秒无感；
+ * 万一是误判，重建会把他已经敲进去的公式冲掉，那才是真损失。
+ * 判断放在显示之后，正常路径一毫秒都不耽误。
+ */
+async function healIfCloaked(hostInfo) {
+  const hwnd = panelHwnd();
+  if (!hwnd) return;
+  for (const wait of [650, 450, 800]) {
+    await delay(wait);
+    if (!panelStillUp()) return;
+    if ((await paster.cloaked(hwnd)) <= 0) return;
+  }
+  logLine('panel cloaked hwnd=' + hwnd + ' still hidden after 1.9s -> rebuild window');
+  await rebuildPanel(hostInfo, hwnd);
+}
+
+function panelStillUp() {
+  return !!win && !win.isDestroyed() && win.isVisible();
+}
+
+/** 重建面板：destroy 掉旧 HWND，加载完再把刚才那套显示流程走一遍 */
+async function rebuildPanel(hostInfo, oldHwnd) {
+  if (rebuilding) return;
+  rebuilding = true;
+  try {
+    await doRebuild(hostInfo, oldHwnd);
+  } finally {
+    rebuilding = false;
+  }
+}
+
+async function doRebuild(hostInfo, oldHwnd) {
+  const old = win;
+  win = null;
+  if (old && !old.isDestroyed()) old.destroy();
+  createWindow();
+  const fresh = win;
+  await new Promise(function (resolve) {
+    if (!fresh.webContents.isLoading()) { resolve(); return; }
+    fresh.webContents.once('did-finish-load', resolve);
+  });
+  if (!fresh || fresh.isDestroyed()) return;
+  currentHost = hostInfo || currentHost;
+  lastHwnd = currentHost.hwnd;
+  placeNearCursor();
+  fresh.show();
+  fresh.focus();
+  if (!fresh.isFocused()) {
+    fresh.moveTop();
+    fresh.focus();
+  }
+  fresh.webContents.send('focus', currentHost);
+  await delay(700);
+  const now = panelHwnd();
+  const again = await paster.cloaked(now);
+  logLine('showPanel done after rebuild  host=' + (currentHost.proc || '?') +
+    ' visible=' + fresh.isVisible() + ' focused=' + fresh.isFocused() +
+    ' hwnd=' + oldHwnd + '->' + now + ' cloaked=' + again);
 }
 
 function hidePanel() {

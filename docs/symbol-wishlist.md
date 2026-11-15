@@ -1152,7 +1152,70 @@ e2e --target-title=_wpsprobe --fmt=text
   全部渲染成排版公式，无「错误!」、无多余字符
 ```
 
+## 第 29 批（「按热键看不见面板」：DWM cloak 与窗口自愈）
+
+用户报「Ctrl+Alt+Q 无法让界面显示」。`start.log` 一切正常：
+
+```
+hotkey fired  visible=false
+showPanel begin
+showPanel done  host=wps visible=true focused=true
+```
+
+`isVisible()` 说可见、`isFocused()` 说拿到了焦点，屏幕上一个像素都没有。
+
+### 1. 窗口被 DWM 遮住了
+
+`EnumWindows` + `DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED)` 一查就露馅：
+
+```
+hwnd=1576362 vis=True rect=810,126 1109x451 cloak=2 title=[公式编辑器]
+```
+
+`cloak=2` 是 `DWM_CLOAKED_SHELL`：窗口还在，shell 把它挡在合成层外面。
+所以 `IsWindowVisible` / Electron 的 `isVisible()` 全都在撒谎 —— 这两个判断的是
+`WS_VISIBLE` 样式位，跟「屏幕上有没有」是两件事。
+
+### 2. 从外面救不回来
+
+`DwmSetWindowAttribute(hwnd, DWMWA_CLOAK, 0)` 返回 `0x80070005`（E_ACCESSDENIED）：
+跨进程改别人的合成状态被拒。外部 `ShowWindow(SW_HIDE)` + `SW_SHOW` 也无效，回头还是 2。
+唯一能动的只有持窗进程自己，而 Electron 不暴露任何 cloak 相关的 API。
+
+**结论：这个 HWND 已经废了，只能换一个。**
+
+### 3. 重建窗口是唯一出路
+
+`healIfCloaked()`：显示后查 `DWMWA_CLOAKED`，连着三次都遮着就 `destroy()` 重建窗口。
+新 HWND 不带着旧 HWND 的 shell 状态。实测重建耗时 ~370ms，界面完整（工具栏 / 输入区 /
+底部按钮都在）。
+
+### 4. 坑：刚 show 的几百毫秒本来就是 2
+
+第一版「一查是 2 就重建」把每次热键都变成了重建 —— 采样出来的曲线是：
+
+```
+t=0     cloak=2
+t=150   cloak=2
+t=300   cloak=2
+t=500   cloak=0    ← DWM 合成完就自己恢复
+t=800   cloak=0
+```
+
+所以判据改成 650 / 450 / 800ms 连问三次，三次都遮着才算真卡住。
+宁可多等 1 秒也不能误判：真卡住时用户本来就什么都看不见，等一秒无感；
+误判则会把他已经敲进去的公式冲掉。
+
+### 5. 顺带确认的事
+
+- 「反复 show/hide 会把自己搞隐身」—— 复现不了。`test/cloak.probe.js` 跑 12 轮显隐，
+  每轮 `cloak=0`。所以这是**偶发的 shell 状态漂移**（虚拟桌面 / 显示桌面一类），
+  不是某个固定操作触发的，无法从根上消除，只能用自愈兜住。
+- 真正的病根和代码无关：重启进程就恢复。这也是为什么「重启一下就好了」这类
+  土办法在 Windows 上屡试不爽 —— 换掉 HWND 等于把整棵窗口树重来一遍。
+
 ## 七、并入草稿（定义完成后自动生成）
+
 
 > 你给出触发码后，我会在这里生成可直接粘贴进 `src/symbols.js` 的条目，
 > 按 GROUPS 分组，格式：`{ t: '码', x: 'LaTeX', d: '说明' }`。
@@ -1394,3 +1457,5 @@ const DRAFT = [
 | 68 | 每条 EQ 公式末尾多出一个 `\` | `\field` 必须整个包在花括号里（RTF 的组）。漏了外层 `{}` 不报错，但会凭空吐一个反斜杠，而且是**只有放在文档最后一行**才暴露 |
 | 69 | `x_1^2` 的上标跑进下标里 | 上下标参数不能用 `group()`：它内部走 `atom()`，`atom()` 又吞后续上下标，于是变成 `x\s\do6(1\s\up6(2))`。要用 `scriptArg()`，只吃一个字符/组/命令 |
 | 70 | EQ 参数加引号反而更糟 | `\f("a,b",c)` 里的引号会被 WPS 原样打出来（`H₂ₙ₂SO₄"`）。不加引号，直接原样给，嵌套 `\r(\f(a,b))` 才正确 |
+| 71 | `isVisible()` 说可见，屏幕上什么都没有 | DWM 把窗口 cloak 了（`DWMWA_CLOAKED=2`）。`isVisible()` 查的是 `WS_VISIBLE` 样式位，跟「屏幕上有没有」是两件事。外部解不开（`DwmSetWindowAttribute` 返回 E_ACCESSDENIED），只能换 HWND |
+| 72 | 一查到 cloak=2 就重建，结果每次热键都在重建 | 窗口刚 `show()` 的头几百毫秒本来就是 2，DWM 合成完才变 0（实测 500ms 内）。要隔 650/450/800ms 连问三次都遮着才算真卡住 —— 误判的代价是把用户已经敲进去的公式冲掉 |
