@@ -1,11 +1,14 @@
 /* 结构触发后能否直接在空槽里输入，Tab 能否跳到下一格 */
 const puppeteer = require('puppeteer-core');
+const path = require('node:path');
+// 页面地址按探针自己的位置算：项目拷到任何盘符 / 目录都能跑
+const FE_PAGE = 'file:///' + path.resolve(__dirname, '..', 'src', 'index.html').replace(/\\/g, '/');
 const EDGE = 'C://Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 (async () => {
   const b = await puppeteer.launch({ executablePath: EDGE, headless: 'new', args: ['--allow-file-access-from-files'] });
   const p = await b.newPage();
   p.on('pageerror', e => console.log('[pageerror] ' + e.message));
-  await p.goto('file:///E:/FormulaEditor/src/index.html', { waitUntil: 'networkidle2' });
+  await p.goto(FE_PAGE, { waitUntil: 'networkidle2' });
   await new Promise(r => setTimeout(r, 900));
   const v = () => p.evaluate(() => __FE.latex());
   const wait = (ms) => new Promise(r => setTimeout(r, ms));

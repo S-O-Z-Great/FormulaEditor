@@ -1,8 +1,11 @@
 /* 真实键盘输入探针：用 puppeteer-core 驱动本机 Edge，模拟用户点击 + 打字 */
 const puppeteer = require('puppeteer-core');
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const URL = 'file:///E:/FormulaEditor/src/index.html';
+const path = require('node:path');
+// 页面地址按探针自己的位置算：项目拷到任何盘符 / 目录都能跑
+const FE_PAGE = 'file:///' + path.resolve(__dirname, '..', 'src', 'index.html').replace(/\\/g, '/');
+const EDGE = process.env.FE_EDGE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const URL = FE_PAGE;
 
 (async () => {
   const browser = await puppeteer.launch({

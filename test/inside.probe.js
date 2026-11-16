@@ -9,7 +9,10 @@
  *   ② 一格里有多个字（`_{2+}`）时，方向键整格跳过，原生 ← 会一步跳出格子。
  */
 const puppeteer = require('puppeteer-core');
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const path = require('node:path');
+// 页面地址按探针自己的位置算：项目拷到任何盘符 / 目录都能跑
+const FE_PAGE = 'file:///' + path.resolve(__dirname, '..', 'src', 'index.html').replace(/\\/g, '/');
+const EDGE = process.env.FE_EDGE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const fails = [];
 
@@ -18,7 +21,7 @@ const fails = [];
   const page = await browser.newPage();
   await page.setViewport({ width: 900, height: 360 });
   page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message));
-  await page.goto('file:///E:/FormulaEditor/src/index.html', { waitUntil: 'networkidle2' });
+  await page.goto(FE_PAGE, { waitUntil: 'networkidle2' });
   await wait(900);
 
   const reset = async () => {

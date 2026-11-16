@@ -1,14 +1,17 @@
 /* 核心回归：确认式转换 + 变量必须以 ## 收尾 + 居中布局 */
 const puppeteer = require('puppeteer-core');
 
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const path = require('node:path');
+// 页面地址按探针自己的位置算：项目拷到任何盘符 / 目录都能跑
+const FE_PAGE = 'file:///' + path.resolve(__dirname, '..', 'src', 'index.html').replace(/\\/g, '/');
+const EDGE = process.env.FE_EDGE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 (async () => {
   const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new', args: ['--allow-file-access-from-files'] });
   const page = await browser.newPage();
   await page.setViewport({ width: 780, height: 300 });
-  await page.goto('file:///E:/FormulaEditor/src/index.html', { waitUntil: 'networkidle2' });
+  await page.goto(FE_PAGE, { waitUntil: 'networkidle2' });
   await wait(900);
 
   const fails = [];

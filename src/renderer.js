@@ -41,8 +41,16 @@
 
   function latex() { return mf.getValue('latex') || ''; }
 
-  // 待定码里这几个字符会被 MathLive 抢先解释成结构（^{} / _{}）或自动转换（· → \cdot）
+  // 待定码里这几个字符会被 MathLive 抢先解释成结构或自动转换：
+  //   ^{} / _{} 上下标结构、· 自动转 \cdot。
+  // 单独 insert 一个这类字符会让「按字符数回删」的计数错位，统一包进 \text 变回 1 个 token。
   const TEXT_LITERAL = /^[\^_·]$/;
+
+  // 花括号：待定码里必须原样显示成 { }，但直接 insert('{') 会开一个分组原子
+  // （`#{` 的码就是它），`#{2` 确认后光标因此停在结构外面（pos=7），
+  // 而 `#{` 却停在第一格（pos=2）。用 LaTeX 的转义写法：\{ 渲染出来就是 {，
+  // 而且是**一个**普通字符原子，计数和落点都对得上。
+  const BRACE_TEX = { '{': '\\{', '}': '\\}' };
 
   function typeChar(ch) {
     focusField();
@@ -54,6 +62,8 @@
     // 同理：^ 会变上标结构 ^{}、_ 会变下标结构 _{}、· 会被自动转成 \cdot，
     // 逐个字符落地都会让「按字符数回删」的计数错位，统一包进 \text 变回 1 个 token
     else if (ime.on && TEXT_LITERAL.test(ch)) tex = '\\text{' + ch + '}';
+    // 花括号走 LaTeX 转义：\{ 渲染成 {，且是一个普通字符原子
+    else if (ime.on && BRACE_TEX[ch]) tex = BRACE_TEX[ch];
     else tex = ch;
     // 贴着整体左边界时先把它挪开，否则这个字会被塞进那个整体里
     if (!insertBeforeUnit(tex)) mf.insert(tex);
@@ -509,7 +519,12 @@
 
   /** 某条分支的内容概况（给退格判断与补占位符用） */
   function slotFrom(model, owner, key) {
-    const atoms = branchAtoms(owner, key);
+    return slotFromAtoms(model, owner, key, branchAtoms(owner, key));
+  }
+
+  /** 同上，但直接给一组原子。矩阵格子不在 _branches 里（挂在 array 的 rows 上），
+   *  只能用这个入口算区间。 */
+  function slotFromAtoms(model, owner, key, atoms) {
     let lo = Infinity;
     let hi = -Infinity;
     atoms.forEach(function (x) {
@@ -583,7 +598,12 @@
    *  槽里已经有内容时，caret 落在内容末尾。
    *  `unit` 是这一格所属的实体（不在实体里 → null），用来算「整块」的范围。 */
   function fieldFrom(model, owner, key, unit, external) {
-    const s = slotFrom(model, owner, key);
+    return fieldFromAtoms(model, owner, key, branchAtoms(owner, key), unit, external);
+  }
+
+  /** 同上，但直接给一组原子（矩阵格子用）。 */
+  function fieldFromAtoms(model, owner, key, atoms, unit, external) {
+    const s = slotFromAtoms(model, owner, key, atoms);
     let caret = null;
     let phId = null;
     (function findPh(arr) {
@@ -636,6 +656,34 @@
     return found;
   }
 
+  /** 这些原子的 **body 分支本身就是一格内容**，不像分式那样另开 above/below。
+   *  根号的被开方数、括号里的东西、上划线盖住的式子都是这一类。
+   *  以前统一跳过 body，等于宣布「这一格不存在」，于是 #vn 里 Tab 永远跨过被开方数。
+   *
+   *  收谁不收谁，是逐个验证过的：
+   *   - `surd` 根号的被开方数      → 收（#v / #vn 都要往里写）
+   *   - `leftright` 括号里的东西    → 收
+   *   - `overline` / `underline` / `accent` 被装饰的内容 → 收
+   *   - `group` 绝对不能收：元素那个 `{\vphantom{0}}` 底座就是 group，
+   *     收进来会多出两个假槽，数字还被塞进 `\vphantom{…}`（导出成 `{\vphantom{014}}\mathrm{Cu}`）。
+   *   - `overunder` 也不收：`\overset{标注}{x}` 的 body 是**被标注的主体**
+   *     （变量名 Tom 就是它），收了会把变量内部当成一格，光标在变量里按 ←
+   *     就不肯一次跳出整体了（实测回归）。 */
+  const BODY_IS_SLOT = /^(surd|leftright|overline|underline|accent)$/;
+
+  /** 原子类型小写化兜底：个别版本里 type 为空，只有 command。 */
+  function typeOf(a) {
+    return String((a && a.type) || '');
+  }
+
+  /** 矩阵 / 分段这类 array 原子的一个格子。
+   *  格子在 `rows[r][c]` 上，不在 _branches 里，所以普通分支遍历看不到它们。 */
+  function cellField(model, owner, r, c, cell, unit, external) {
+    const f = fieldFromAtoms(model, owner, 'cell:' + r + ':' + c, cell, unit, external);
+    f.cell = { r: r, c: c };
+    return f;
+  }
+
   /** 整篇文档里所有的槽，按文档顺序（= 视觉从左到右、从上到下）。
    *  `external` 标记「挂在实体右边、但本身不在实体里」的上下标——H₂ 那个 2。
    *  它是独立原子，删空之后再退格该删它自己，而不是把整个元素吞掉。 */
@@ -658,10 +706,30 @@
         if (shell) { u = shell; ex = true; }
         childBranches(x).forEach(function (br) {
           // 外壳的 body 分支就是实体本身：进去以后 ext 要归零，里面那四格才是内层格
-          if (br.key === 'body') { fieldsIn(br.atoms, u, shell ? false : ex); return; }
+          if (br.key === 'body') {
+            // 少数原子的 body **本身就是内容槽**：根号的被开方数、括号里的东西、
+            // 上划线盖住的式子。它们不像分式那样另开 above/below 分支，
+            // 所以光跳过 body 就等于「这一格不存在」——
+            // 插入 #vn 之后 Tab 永远跨过被开方数，就是这么来的。
+            if (BODY_IS_SLOT.test(typeOf(x))) {
+              out.push(fieldFrom(model, x, 'body', u, ex));
+            }
+            fieldsIn(br.atoms, u, shell ? false : ex);
+            return;
+          }
           out.push(fieldFrom(model, x, br.key, u, shell ? true : ex));
           fieldsIn(br.atoms, u, shell ? true : ex);
         });
+        // 矩阵 / 分段这类 array 原子把格子挂在 rows 上，不在 _branches 里，
+        // 光遍历分支等于整张表都进不去（Tab 完全走不动）。
+        if (x.type === 'array' && Array.isArray(x.rows)) {
+          x.rows.forEach(function (row, ri) {
+            (row || []).forEach(function (cell, ci) {
+              if (!Array.isArray(cell)) return;
+              out.push(cellField(model, x, ri, ci, cell, u, ex));
+            });
+          });
+        }
         lastUnit = self;
       });
     })(model.root.body || [], null, false);
@@ -695,7 +763,15 @@
           for (let j = 0; j < list.length; j++) {
             if (list[j].owner === p && list[j].key === key) return list[j];
           }
-          return null;              // 在结构里，但这格没被收录（矩阵单元格之类）
+          return null;              // 在结构里，但这格没被收录
+        }
+        // body 分支也可能是内容槽（根号、括号、上划线），矩阵格子更不在分支里。
+        // 这两种情况 branchKeyOf 拿不到 key，改成「按归属原子匹配」：
+        // 只要这一格记录的原子列表里有祖先 p 的子孙，就算落在这一格里。
+        for (let j = 0; j < list.length; j++) {
+          const f = list[j];
+          if (f.owner !== p) continue;
+          if (f.atoms.indexOf(cur) >= 0) return f;
         }
         cur = p;
       }
@@ -1248,6 +1324,57 @@
     const model = modelOf();
     const last = model && typeof model.lastOffset === 'number' ? model.lastOffset : null;
     return (last != null && u.end > last) ? last : u.end;
+  }
+
+  /** `[` / `]`：跳到上一个 / 下一个整体。
+   *
+   *  dir < 0 落到目标整体的**左边界**（贴着块前面，接着打字落在块外）；
+   *  dir > 0 落到目标整体的**右边界**（贴着块尾，接着按 _ / ^ 挂到这个块上）。
+   *
+   *  两个细节：
+   *  ① 光标在块内部时，`[` 要先跳出这一块（落到它的左边界），而不是原地不动；
+   *  ② 块与块首尾相接时（H₂O 就是），「上一个」不能用 `end <= pos` 判，
+   *     否则会停在缝上反复横跳。这里按 start 排序后取「start 严格小于当前位置」的最后一个。 */
+  function jumpUnit(dir) {
+    const list = units();
+    if (!list.length) return false;
+    const pos = mf.position;
+    const here = unitOf(list, pos);
+    // 贴着块左边界时，「在块里」和「在块前面」是同一个 offset（MathLive 的插入点
+    // 落在块内部第一个原子后面）。这时按 `[` 应该继续往左走，不该把它当成
+    // 「已经在这一块里了」。所以严格用 pos > start 才算在块内部。
+    const insideHere = !!here && pos > here.start;
+    const ordered = list.slice().sort(function (a, b) { return a.start - b.start; });
+
+    if (dir < 0) {
+      // 在块里（严格内部）：先退到这一块的左边界
+      if (insideHere) {
+        selectRange(here.start, here.start);
+        return true;
+      }
+      let target = null;
+      for (let i = 0; i < ordered.length; i++) {
+        const u = ordered[i];
+        if (u.start < pos && (!target || u.start > target.start)) target = u;
+      }
+      if (!target) return false;
+      selectRange(target.start, target.start);
+      return true;
+    }
+
+    // 向右：从当前位置（块里就从块尾）之后找第一个块
+    const from = insideHere ? unitEnd(here) : pos;
+    let target = null;
+    for (let i = 0; i < ordered.length; i++) {
+      const u = ordered[i];
+      if (u.start >= from && (!target || u.start < target.start)) target = u;
+    }
+    if (!target) {
+      if (here) { selectRange(unitEnd(here), unitEnd(here)); return true; }
+      return false;
+    }
+    selectRange(unitEnd(target), unitEnd(target));
+    return true;
   }
 
   /** 光标是不是紧贴着这个实体的**最后一块**（实体本体、它的子孙原子，或者并进来的上下标）。
@@ -2110,6 +2237,20 @@
 
     // 新的一次按键：上一键的槽内收尾作废
     slotEditDone = true;
+
+    // [ / ]：在整体之间跳（底部提示一直写着「[ ] 跳块」，但一直没实现，
+    // 按下去只会往公式里插一个 \lbrack）。
+    // 必须放在 handleUnitKey 之前：那条路径会把「贴着块右边界」的光标当成整体语义处理，
+    // 落到这里时插入点已经被挪过一格，跳块就会插进字符。
+    if ((ch === '[' || ch === ']' || ev.key === '[' || ev.key === ']') &&
+        !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ime.on) {
+      stop(ev);
+      if (!jumpUnit(ch === ']' || ev.key === ']' ? 1 : -1)) {
+        // 没有可跳的块：什么都不做（不要把 [ 当成字符插进公式）
+      }
+      focusField();
+      return;
+    }
 
     if (ime.on && handleImeKey(ev, ch)) return;
 

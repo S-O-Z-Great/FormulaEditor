@@ -2,6 +2,10 @@ node_modules/
 dist/
 release/
 
+# pnpm 的本地存储与锁文件（用 npm 安装时不产生这些）
+.pnpm-store/
+pnpm-lock.yaml
+
 # 自检时生成的临时产物（docx / 截图 / 结果 json），不进版本库
 test/_*
 *.log

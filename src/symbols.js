@@ -36,18 +36,23 @@
         { t: '--', x: '\\frac{$0}{}', d: '分数线（分子在上）' },
         { t: '——', x: '\\frac{$0}{}', d: '分数线（破折号写法，等价 #--）' },
         { t: 'v', x: '\\sqrt{$0}', d: '根号' },
-        { t: 'vn', x: '\\sqrt[$0]{}', d: 'n 次根' },
-        { t: '{', x: '\\begin{cases}$0\\\\\\end{cases}', d: '分段函数' },
-        { t: '{2', x: '\\begin{cases}$0\\\\\\end{cases}', d: '方程组（两行）' },
-        { t: 'm2', x: '\\begin{pmatrix}$0&\\\\&\\end{pmatrix}', d: '2×2 矩阵' },
-        { t: '||', x: '\\begin{vmatrix}$0&\\\\&\\end{vmatrix}', d: '行列式' },
+        // 下面这几条必须显式写 \placeholder{}：矩阵 / 分段函数的格子里没有 {}
+        // 可替换，落槽机制（见 renderer.js 的 replacePreedit）就找不到空槽，
+        // 插入后光标停在结构外面，打进去的字全跑到矩阵右边。
+        { t: 'vn', x: '\\sqrt[\\placeholder{}]{\\placeholder{}}', d: 'n 次根' },
+        { t: '{', x: '\\begin{cases}\\placeholder{}\\\\\\placeholder{}\\end{cases}', d: '分段函数' },
+        { t: '{2', x: '\\begin{cases}\\placeholder{}\\\\\\placeholder{}\\end{cases}', d: '方程组（两行）' },
+        { t: 'm2', x: '\\begin{pmatrix}\\placeholder{}&\\placeholder{}\\\\\\placeholder{}&\\placeholder{}\\end{pmatrix}', d: '2×2 矩阵' },
+        { t: '||', x: '\\begin{vmatrix}\\placeholder{}&\\placeholder{}\\\\\\placeholder{}&\\placeholder{}\\end{vmatrix}', d: '行列式' },
         { t: 'C', x: '\\binom{$0}{}', d: '组合数 C(n,k)' },
         { t: 'A', x: '\\mathrm{A}_{$0}^{}', d: '排列数 A(n,k)' },
         { t: 'oo', x: '\\infty', d: '无穷' },
         { t: '^o', x: '^\\circ', d: '度数' },
         { t: 'degree', p: 1, x: '^\\circ', d: '度数（全拼）' },
-        { t: '[[', x: '\\lfloor $0 \\rfloor', d: '下取整' },
-        { t: ']]', x: '\\lceil $0 \\rceil', d: '上取整' },
+        // 原来是 `\lfloor $0 \rfloor`：$0 那个位置夹的是空格，不是空槽，
+        // 渲染引擎不认，字就落到 \rfloor 外面去了。改成真占位符。
+        { t: '[[', x: '\\lfloor \\placeholder{} \\rfloor', d: '下取整' },
+        { t: ']]', x: '\\lceil \\placeholder{} \\rceil', d: '上取整' },
         { t: 'ob', x: '\\overbrace{$0}^{}', d: '上括号' },
         { t: 'ub', x: '\\underbrace{$0}_{}', d: '下括号' }
       ]

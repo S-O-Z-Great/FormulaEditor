@@ -8,7 +8,10 @@
  *   ④ 关掉之后焦点回到公式，能接着打字
  */
 const puppeteer = require('puppeteer-core');
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const path = require('node:path');
+// 页面地址按探针自己的位置算：项目拷到任何盘符 / 目录都能跑
+const FE_PAGE = 'file:///' + path.resolve(__dirname, '..', 'src', 'index.html').replace(/\\/g, '/');
+const EDGE = process.env.FE_EDGE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let pass = 0;
@@ -25,7 +28,7 @@ function check(name, ok, detail) {
   const page = await browser.newPage();
   await page.setViewport({ width: 980, height: 620 });
   page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message));
-  await page.goto('file:///E:/FormulaEditor/src/index.html', { waitUntil: 'networkidle2' });
+  await page.goto(FE_PAGE, { waitUntil: 'networkidle2' });
   await wait(900);
 
   const reset = async () => {

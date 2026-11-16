@@ -398,6 +398,7 @@ MathLive 里除了 `body` 之外的分支（`superscript` / `subscript` / `above
 | `↑↓←→` | 实体内部：按方位换格；实体之间：在分子/分母、上下限、根号内外等结构间移动 |
 | `Ctrl+↑` / `Ctrl+↓` | 上一个 / 下一个占位槽 |
 | `Ctrl+←` / `Ctrl+→` | 跳出当前结构（左侧 / 右侧） |
+| `[` / `]` | 跳到上一个 / 下一个整体（变量、元素、带槽的符号） |
 | `^` / `_` | 直接生成上标 / 下标空槽 |
 | `Tab` / `Shift+Tab` | 下一个 / 上一个空槽（填完一格跳到下一格） |
 | `Ctrl+Z` | 撤销 |
@@ -430,18 +431,18 @@ MathLive 里除了 `body` 之外的分支（`superscript` / `subscript` / `above
 | `#--` | `\frac{}{}` | 分数线（分子在上） |
 | `#——` | `\frac{}{}` | 分数线（破折号写法，等价 #--） |
 | `#v` | `\sqrt{}` | 根号 |
-| `#vn` | `\sqrt[]{}` | n 次根 |
-| `#{` | `\begin{cases}\\\end{cases}` | 分段函数 |
-| `#{2` | `\begin{cases}\\\end{cases}` | 方程组（两行） |
-| `#m2` | `\begin{pmatrix}&\\&\end{pmatrix}` | 2×2 矩阵 |
-| `#||` | `\begin{vmatrix}&\\&\end{vmatrix}` | 行列式 |
+| `#vn` | `\sqrt[\placeholder{}]{\placeholder{}}` | n 次根 |
+| `#{` | `\begin{cases}\placeholder{}\\\placeholder{}\end{cases}` | 分段函数 |
+| `#{2` | `\begin{cases}\placeholder{}\\\placeholder{}\end{cases}` | 方程组（两行） |
+| `#m2` | `\begin{pmatrix}\placeholder{}&\placeholder{}\\\placeholder{}&\placeholder{}\end{pmatrix}` | 2×2 矩阵 |
+| `#||` | `\begin{vmatrix}\placeholder{}&\placeholder{}\\\placeholder{}&\placeholder{}\end{vmatrix}` | 行列式 |
 | `#C` | `\binom{}{}` | 组合数 C(n,k) |
 | `#A` | `\mathrm{A}_{}^{}` | 排列数 A(n,k) |
 | `#oo` | `\infty` | 无穷 |
 | `#^o` | `^\circ` | 度数 |
 | `#degree` | `^\circ` | 度数（全拼） |
-| `#[[` | `\lfloor  \rfloor` | 下取整 |
-| `#]]` | `\lceil  \rceil` | 上取整 |
+| `#[[` | `\lfloor \placeholder{} \rfloor` | 下取整 |
+| `#]]` | `\lceil \placeholder{} \rceil` | 上取整 |
 | `#ob` | `\overbrace{}^{}` | 上括号 |
 | `#ub` | `\underbrace{}_{}` | 下括号 |
 

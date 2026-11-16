@@ -510,5 +510,8 @@ FormulaEditor/
 - [ ] M6.1 让 Word/WPS 拿到可编辑公式：只能走 .docx（剪贴板无解），待做
 `;
 
-fs.writeFileSync(path.join(__dirname, '..', 'README.md'), md);
+// 仓库里 README.md 一直是 CRLF（Windows 上编辑保存的），
+// 生成时按 LF 写会把整篇都变成「已修改」，diff 里 692 行全红。
+// 这里统一按 CRLF 落盘，和仓库现状保持一致。
+fs.writeFileSync(path.join(__dirname, '..', 'README.md'), md.replace(/\r?\n/g, '\r\n'));
 console.log('README.md 已生成：' + SYM.FLAT.length + ' 个触发码');

@@ -4,7 +4,10 @@
  *   ② O₂ 后面打一个等号，删等号时把氧气一起带走了。
  * 现在槽位表是**整篇文档**的（元素右边那个外挂下标也算一格），删除按「左边那一样东西」算。 */
 const puppeteer = require('puppeteer-core');
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const path = require('node:path');
+// 页面地址按探针自己的位置算：项目拷到任何盘符 / 目录都能跑
+const FE_PAGE = 'file:///' + path.resolve(__dirname, '..', 'src', 'index.html').replace(/\\/g, '/');
+const EDGE = process.env.FE_EDGE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const fails = [];
 
@@ -13,7 +16,7 @@ const fails = [];
   const page = await browser.newPage();
   await page.setViewport({ width: 900, height: 320 });
   page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message));
-  await page.goto('file:///E:/FormulaEditor/src/index.html', { waitUntil: 'networkidle2' });
+  await page.goto(FE_PAGE, { waitUntil: 'networkidle2' });
   await wait(900);
 
   const reset = async () => {
